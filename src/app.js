@@ -657,7 +657,7 @@ function showWorkActionsTemporarily() {
     if (state.currentView === "work") {
       document.body.classList.add("work-actions-idle");
     }
-  }, 2400);
+  }, 4200);
 }
 
 function trackViewHistory() {

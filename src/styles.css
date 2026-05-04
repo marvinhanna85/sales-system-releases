@@ -2502,3 +2502,83 @@ body {
     transform: translateY(calc(100% + 18px));
   }
 }
+
+/* Final command bar behavior: consistent in compact and medium work windows. */
+body.is-work-view .work-layout {
+  padding-bottom: 104px;
+}
+
+body.is-work-view .work-footer:not([hidden]) {
+  position: fixed !important;
+  right: 24px;
+  bottom: 14px;
+  left: auto;
+  z-index: 80;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: min(760px, calc(100vw - 48px));
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  margin: 0;
+  border: 1px solid rgba(190, 207, 230, 0.95);
+  border-radius: 18px;
+  background: rgba(248, 251, 255, 0.98);
+  box-shadow: 0 18px 42px rgba(20, 38, 70, 0.22);
+  transition: transform 200ms ease, opacity 200ms ease, box-shadow 200ms ease;
+}
+
+body.is-work-view .work-footer[hidden] {
+  display: none !important;
+}
+
+body.is-work-view .work-footer .primary-button,
+body.is-work-view .work-footer .secondary-button,
+body.is-work-view .work-footer .ghost-button {
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 10px;
+  border-radius: 14px;
+  white-space: nowrap;
+}
+
+body.is-work-view #workSaveAndNextButton {
+  order: 10;
+}
+
+body.is-work-view.work-actions-idle .work-footer {
+  opacity: 0.62;
+  pointer-events: auto;
+  transform: translateY(calc(100% - 18px));
+}
+
+body.is-work-view.work-actions-idle .work-footer:hover,
+body.is-work-view .work-footer:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+body.is-work-view .work-footer::before {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(120, 139, 166, 0.42);
+  content: "";
+  transform: translateX(-50%);
+}
+
+body.is-work-view .status-grid {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 560px) {
+  body.is-work-view .work-footer:not([hidden]) {
+    right: 12px;
+    bottom: 10px;
+    width: calc(100vw - 24px);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
