@@ -2385,15 +2385,33 @@ body {
 @media (max-width: 860px) {
   body.is-work-view .topbar {
     min-height: 0;
-    padding: 0;
+    padding: 0 2px;
     border: 0;
     background: transparent;
     box-shadow: none;
+    justify-content: flex-end;
   }
 
   body.is-work-view .topbar-titlebar > div,
-  body.is-work-view .topbar-actions {
+  body.is-work-view #updateControl,
+  body.is-work-view #topbarNextLead {
     display: none;
+  }
+
+  body.is-work-view .topbar-actions {
+    display: flex;
+    width: auto;
+    margin-left: auto;
+  }
+
+  body.is-work-view .topbar-actions > * {
+    width: auto;
+  }
+
+  body.is-work-view .zoom-control {
+    justify-content: center;
+    min-width: 190px;
+    padding-block: 6px;
   }
 
   body.is-work-view .topbar-titlebar {
