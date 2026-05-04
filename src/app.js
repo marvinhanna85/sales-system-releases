@@ -641,7 +641,7 @@ function render() {
 }
 
 function setupWorkActionAutohide() {
-  const activityEvents = ["scroll", "wheel", "mousemove", "pointerdown", "keydown", "touchstart", "touchmove"];
+  const activityEvents = ["scroll", "resize", "wheel", "pointerdown", "keydown", "touchstart", "touchmove"];
   activityEvents.forEach((eventName) => {
     window.addEventListener(eventName, showWorkActionsTemporarily, { passive: true });
   });
@@ -651,13 +651,22 @@ function showWorkActionsTemporarily() {
   if (state.currentView !== "work") {
     return;
   }
+  syncWorkCommandBarPosition();
   document.body.classList.remove("work-actions-idle");
   window.clearTimeout(workActionsIdleTimer);
-  workActionsIdleTimer = window.setTimeout(() => {
-    if (state.currentView === "work") {
-      document.body.classList.add("work-actions-idle");
-    }
-  }, 4200);
+}
+
+function syncWorkCommandBarPosition() {
+  const footer = elements.workSaveButton?.closest(".work-footer");
+  if (!elements.workMain || !footer || footer.hidden) {
+    return;
+  }
+  const rect = elements.workMain.getBoundingClientRect();
+  const edge = window.innerWidth <= 560 ? 12 : 24;
+  const left = Math.max(edge, rect.left);
+  const width = Math.max(280, Math.min(rect.width, window.innerWidth - left - edge));
+  document.documentElement.style.setProperty("--work-command-left", `${Math.round(left)}px`);
+  document.documentElement.style.setProperty("--work-command-width", `${Math.round(width)}px`);
 }
 
 function trackViewHistory() {

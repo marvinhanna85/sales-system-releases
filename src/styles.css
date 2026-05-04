@@ -2505,18 +2505,18 @@ body {
 
 /* Final command bar behavior: consistent in compact and medium work windows. */
 body.is-work-view .work-layout {
-  padding-bottom: 104px;
+  padding-bottom: 84px;
 }
 
 body.is-work-view .work-footer:not([hidden]) {
   position: fixed !important;
-  right: 24px;
+  right: auto;
   bottom: 14px;
-  left: auto;
+  left: var(--work-command-left, 24px);
   z-index: 80;
   display: grid !important;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  width: min(760px, calc(100vw - 48px));
+  width: var(--work-command-width, min(760px, calc(100vw - 48px)));
   gap: 8px;
   align-items: center;
   padding: 10px;
@@ -2547,9 +2547,9 @@ body.is-work-view #workSaveAndNextButton {
 }
 
 body.is-work-view.work-actions-idle .work-footer {
-  opacity: 0.62;
+  opacity: 1;
   pointer-events: auto;
-  transform: translateY(calc(100% - 18px));
+  transform: none;
 }
 
 body.is-work-view.work-actions-idle .work-footer:hover,
@@ -2559,15 +2559,7 @@ body.is-work-view .work-footer:focus-within {
 }
 
 body.is-work-view .work-footer::before {
-  position: absolute;
-  top: 5px;
-  left: 50%;
-  width: 44px;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(120, 139, 166, 0.42);
-  content: "";
-  transform: translateX(-50%);
+  content: none;
 }
 
 body.is-work-view .status-grid {
@@ -2576,9 +2568,7 @@ body.is-work-view .status-grid {
 
 @media (max-width: 560px) {
   body.is-work-view .work-footer:not([hidden]) {
-    right: 12px;
     bottom: 10px;
-    width: calc(100vw - 24px);
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
