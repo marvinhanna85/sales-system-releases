@@ -55,18 +55,12 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version || '' }}
           RELEASE_SKIP_TESTS: ${{ inputs.skip_tests || 'false' }}
         run: |
-          $Args = @()
+          $SkipTests = $env:RELEASE_SKIP_TESTS -eq "true"
           if ($env:RELEASE_VERSION -ne "") {
-            $Args += "-Version"
-            $Args += $env:RELEASE_VERSION
+            ./scripts/release.ps1 -Version $env:RELEASE_VERSION -SkipTests:$SkipTests
           } else {
-            $Args += "-Bump"
-            $Args += $env:RELEASE_BUMP
+            ./scripts/release.ps1 -Bump $env:RELEASE_BUMP -SkipTests:$SkipTests
           }
-          if ($env:RELEASE_SKIP_TESTS -eq "true") {
-            $Args += "-SkipTests"
-          }
-          ./scripts/release.ps1 @Args
 
       - name: Save released version in repo
         shell: pwsh
