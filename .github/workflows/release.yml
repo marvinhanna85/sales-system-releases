@@ -50,7 +50,7 @@ jobs:
       - name: Release app
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_BUMP: ${{ inputs.bump || 'patch' }}
           RELEASE_VERSION: ${{ inputs.version || '' }}
           RELEASE_SKIP_TESTS: ${{ inputs.skip_tests || 'false' }}
