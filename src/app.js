@@ -96,6 +96,8 @@ const state = {
     workDraft: createEmptyWorkDraft()
   };
 
+let workActionsIdleTimer = null;
+
 const elements = {
   navButtons: [...document.querySelectorAll(".nav-button")],
   views: {
@@ -267,6 +269,7 @@ void init();
 async function init() {
   try {
     bindEvents();
+    setupWorkActionAutohide();
     await refreshState();
     hydrateSettings();
     applyUiZoom(state.uiZoom);
@@ -595,6 +598,12 @@ function renderUpdateControl() {
 function render() {
   try {
     trackViewHistory();
+    document.body.dataset.view = state.currentView;
+    document.body.classList.toggle("is-work-view", state.currentView === "work");
+    if (state.currentView !== "work") {
+      window.clearTimeout(workActionsIdleTimer);
+      document.body.classList.remove("work-actions-idle");
+    }
     elements.navButtons.forEach((button) => {
       button.classList.toggle("is-active", button.dataset.view === state.currentView);
     });
@@ -625,9 +634,30 @@ function render() {
     safeRenderSection("reminders", renderReminders);
     safeRenderSection("export", renderExport);
     safeRenderSection("profile", renderProfile);
+    showWorkActionsTemporarily();
   } catch (error) {
     reportRuntimeError("Render-fel", error);
   }
+}
+
+function setupWorkActionAutohide() {
+  const activityEvents = ["scroll", "wheel", "mousemove", "pointerdown", "keydown", "touchstart", "touchmove"];
+  activityEvents.forEach((eventName) => {
+    window.addEventListener(eventName, showWorkActionsTemporarily, { passive: true });
+  });
+}
+
+function showWorkActionsTemporarily() {
+  if (state.currentView !== "work") {
+    return;
+  }
+  document.body.classList.remove("work-actions-idle");
+  window.clearTimeout(workActionsIdleTimer);
+  workActionsIdleTimer = window.setTimeout(() => {
+    if (state.currentView === "work") {
+      document.body.classList.add("work-actions-idle");
+    }
+  }, 2400);
 }
 
 function trackViewHistory() {
@@ -3428,6 +3458,7 @@ function renderWorkMode() {
   elements.manualBackButton.hidden = isFlow || !lead;
   elements.manualBackButton.textContent = "Klar / välj ny kund";
   elements.workSaveButton.textContent = "Spara";
+  elements.workSaveAndNextButton.textContent = "Nästa";
   elements.toggleManualCreateButton.textContent = "+ Ny kund";
   elements.manualSearchResults.hidden = isFlow || Boolean(lead) || !state.manualSearchTerm.trim();
   elements.manualCreatePanel.hidden = !isManualCreate;

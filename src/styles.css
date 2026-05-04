@@ -2380,3 +2380,107 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Work mode should feel like the tool itself when the app is minimized. */
+@media (max-width: 860px) {
+  body.is-work-view .topbar {
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  body.is-work-view .topbar-titlebar > div,
+  body.is-work-view .topbar-actions {
+    display: none;
+  }
+
+  body.is-work-view .topbar-titlebar {
+    width: auto;
+  }
+
+  body.is-work-view .topbar-titlebar:has(#topbarBackButton[hidden]) {
+    display: none;
+  }
+
+  body.is-work-view #workView > .panel {
+    padding-top: 14px;
+  }
+
+  body.is-work-view #workView > .panel > .section-header {
+    display: flex;
+    justify-content: flex-end;
+    min-height: 0;
+    margin-bottom: -2px;
+  }
+
+  body.is-work-view #workView > .panel > .section-header > div:first-child {
+    display: none;
+  }
+
+  body.is-work-view #workView > .panel > .section-header .segmented-control {
+    width: min(100%, 260px);
+    margin-left: auto;
+  }
+
+  body.is-work-view #workView > .panel > .section-header .segment-button {
+    min-height: 38px;
+    padding-block: 8px;
+  }
+
+  body.is-work-view .work-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(142px, auto);
+    align-items: center;
+  }
+
+  body.is-work-view #workNextLeadButton {
+    display: none;
+  }
+
+  body.is-work-view .work-layout {
+    padding-bottom: 86px;
+  }
+
+  body.is-work-view .work-footer:not([hidden]) {
+    position: fixed;
+    right: 14px;
+    bottom: 12px;
+    left: 14px;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    align-items: center;
+    padding: 10px;
+    margin: 0;
+    border: 1px solid rgba(190, 207, 230, 0.9);
+    border-radius: 18px;
+    background: rgba(248, 251, 255, 0.96);
+    box-shadow: 0 18px 42px rgba(20, 38, 70, 0.22);
+    transition: transform 180ms ease, opacity 180ms ease;
+  }
+
+  body.is-work-view .work-footer[hidden] {
+    display: none;
+  }
+
+  body.is-work-view .work-footer .primary-button,
+  body.is-work-view .work-footer .secondary-button,
+  body.is-work-view .work-footer .ghost-button {
+    min-width: 0;
+    min-height: 42px;
+    padding: 9px 10px;
+    white-space: nowrap;
+  }
+
+  body.is-work-view #workSaveAndNextButton {
+    order: 10;
+  }
+
+  body.is-work-view.work-actions-idle .work-footer {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(calc(100% + 18px));
+  }
+}
