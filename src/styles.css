@@ -2257,3 +2257,126 @@ body {
     min-width: 0;
   }
 }
+
+/* Compact work view for the Electron minimum window width. */
+@media (max-width: 860px) {
+  .topbar {
+    align-items: center;
+    gap: 10px;
+  }
+
+  .topbar-actions {
+    display: grid;
+    grid-template-columns: minmax(190px, 1fr) minmax(150px, 0.62fr) minmax(150px, 0.62fr);
+    gap: 8px;
+    width: 100%;
+    align-items: center;
+  }
+
+  .topbar-actions > * {
+    width: auto;
+    min-width: 0;
+  }
+
+  .update-control {
+    max-width: none;
+  }
+
+  .zoom-control {
+    justify-content: center;
+  }
+
+  .work-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(112px, auto) minmax(142px, auto);
+    gap: 8px;
+    align-items: center;
+  }
+
+  .work-toolbar > * {
+    width: auto;
+    min-width: 0;
+  }
+
+  .lead-card {
+    padding: 14px 16px;
+    gap: 10px;
+  }
+
+  .lead-card__head--compact {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(188px, 220px);
+    gap: 12px;
+    align-items: start;
+  }
+
+  .lead-heading {
+    gap: 6px;
+  }
+
+  .lead-title-row {
+    gap: 8px;
+  }
+
+  .lead-title {
+    font-size: clamp(1.28rem, 2.8vw, 1.7rem);
+    line-height: 1.08;
+  }
+
+  .lead-actions--compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .lead-actions--compact .primary-button,
+  .lead-actions--compact .secondary-button,
+  .lead-actions--compact .ghost-button {
+    min-height: 40px;
+    padding: 9px 10px;
+  }
+
+  .lead-meta-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .detail-pill {
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+
+  .detail-pill strong {
+    overflow-wrap: anywhere;
+    font-size: 0.9rem;
+    line-height: 1.25;
+  }
+
+  .work-contact-field {
+    max-width: none;
+  }
+
+  .work-note {
+    min-height: 170px;
+  }
+
+  .reminder-inline {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
+@media (max-width: 560px) {
+  .topbar-actions,
+  .work-toolbar,
+  .lead-card__head--compact,
+  .lead-meta-strip,
+  .reminder-inline {
+    grid-template-columns: 1fr;
+  }
+
+  .lead-actions--compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
