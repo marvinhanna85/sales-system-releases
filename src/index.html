@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Outbound Sales System</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">Outbound Sales</p>
+          <h1>Sales System</h1>
+          <p class="sidebar-copy">Lead Engine, CRM / Work Engine och Planning Engine i samma verktyg.</p>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-button is-active" data-view="dashboard">Dashboard</button>
+          <button class="nav-button" data-view="work">Arbetsläge</button>
+          <button class="nav-button" data-view="customers">Kunder</button>
+          <button class="nav-button" data-view="campaigns">Listor / kampanjer</button>
+          <button class="nav-button" data-view="planning">Planering</button>
+          <button class="nav-button" data-view="reminders">Påminnelser</button>
+          <button class="nav-button" data-view="export">Export</button>
+        </nav>
+      </aside>
+
+      <main class="main-panel">
+        <header class="topbar">
+          <div class="topbar-titlebar">
+            <button id="topbarBackButton" class="back-button" type="button" hidden aria-label="GÃ¥ tillbaka">←</button>
+            <div>
+            <p class="eyebrow">Dagens läge</p>
+            <h2 id="topbarTitle">Dashboard</h2>
+            </div>
+          </div>
+          <div class="topbar-actions">
+            <div id="updateControl" class="update-control" hidden>
+              <span id="updateStatusText">Version kontrolleras...</span>
+              <button id="checkUpdatesButton" class="ghost-button icon-button" type="button" title="Sök uppdatering">↻</button>
+              <button id="downloadUpdateButton" class="secondary-button" type="button" hidden>Ladda ner</button>
+              <button id="installUpdateButton" class="primary-button" type="button" hidden>Starta om</button>
+            </div>
+            <label class="zoom-control" title="Justera systemets vy">
+              <span>Zoom</span>
+              <input id="uiZoomSlider" type="range" min="80" max="115" step="5" value="100" />
+              <strong id="uiZoomValue">100%</strong>
+            </label>
+            <button id="topbarNextLead" class="primary-button" type="button">Öppna nästa lead</button>
+          </div>
+        </header>
+
+        <section id="dashboardView" class="view is-active">
+          <div id="dashboardStats" class="stats-grid"></div>
+
+          <section class="panel today-hero">
+            <div class="today-hero__main">
+              <p class="section-label">Idag</p>
+              <h2 id="dashboardTodayTitle">IDAG</h2>
+              <p class="today-date">
+                <span id="dashboardTodayDate">Dagens datum</span>
+                <span id="dashboardWeatherValue" class="today-weather-inline">Hämtar väder...</span>
+              </p>
+              <p id="dashboardSpecialDay" class="muted-text">Dagens läge laddas...</p>
+            </div>
+            <div class="today-hero__side">
+              <small id="dashboardWeatherMeta" hidden>Stockholm</small>
+              <div id="dashboardTodaySummary" class="today-summary"></div>
+            </div>
+          </section>
+
+          <section class="panel week-overview">
+            <div class="week-overview__head">
+              <div>
+                <p class="section-label">Veckoöverblick</p>
+                <h3>Kommande arbetsdagar</h3>
+              </div>
+              <p class="muted-text">Påminnelser och planerade samtal, klicka en dag för att gå vidare.</p>
+            </div>
+            <div id="dashboardWeekOverview" class="week-overview__days"></div>
+          </section>
+
+          <section class="panel dashboard-today-list-panel" hidden>
+            <div class="section-header">
+              <div>
+                <p class="section-label">Idag</p>
+                <h3>Att göra nu</h3>
+              </div>
+            </div>
+            <button id="dashboardTodayToggle" class="ghost-button compact-toggle" type="button">Visa mer</button>
+            <div id="dashboardTodayList" class="stack-list compact-list"></div>
+          </section>
+
+          <section class="panel hero-panel" hidden>
+            <div class="hero-copy">
+              <p class="section-label">Snabbstart</p>
+              <h3>Fortsätt i rätt ordning</h3>
+              <p id="dashboardFocusCopy" class="muted-text">Öppna nästa lead och håll flödet enkelt.</p>
+            </div>
+            <div class="inline-actions">
+              <button id="dashboardNextLead" class="primary-button" type="button">Ring nästa lead</button>
+              <button id="dashboardOpenReminders" class="secondary-button" type="button">Visa påminnelser idag</button>
+            </div>
+          </section>
+        </section>
+
+        <section id="workView" class="view">
+          <section class="panel">
+            <div class="section-header">
+              <div>
+                <p class="section-label">CRM / Work Engine</p>
+                <h3>Arbeta lead för lead eller slå upp kund manuellt</h3>
+              </div>
+              <div class="segmented-control">
+                <button id="workFlowModeButton" class="segment-button is-active" type="button">Lead-flöde</button>
+                <button id="workManualModeButton" class="segment-button" type="button">Manuellt läge</button>
+              </div>
+            </div>
+
+            <div id="workFlowToolbar" class="toolbar toolbar-wrap work-toolbar">
+              <select id="workCampaignFilter" class="input compact-input">
+                <option value="">Alla listor</option>
+              </select>
+              <button id="workNextLeadButton" class="secondary-button" type="button">Nästa lead</button>
+              <button id="openProfileModalButton" class="ghost-button" type="button">Öppna kundkort</button>
+            </div>
+
+            <div id="workManualToolbar" class="manual-toolbar" hidden>
+              <label class="field grow">
+                <span>Sök företag i systemet</span>
+                <input id="manualSearchInput" class="input" type="search" placeholder="Skriv företagsnamn, stad eller telefon" />
+              </label>
+              <div class="manual-toolbar__bar">
+                <div id="manualSearchResults" class="manual-search-results"></div>
+                <div class="inline-actions">
+                  <button id="toggleManualCreateButton" class="ghost-button" type="button">Skapa ny kund</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="work-layout">
+              <div class="work-main">
+                <article id="workLeadCard" class="lead-card empty-card">Välj ett lead eller slå upp en kund.</article>
+
+                <section id="manualCreatePanel" class="subpanel manual-create-panel" hidden>
+                  <div class="section-header">
+                    <div>
+                      <p class="section-label">Ny kund</p>
+                      <h4>Ny kund</h4>
+                    </div>
+                  </div>
+                  <div class="form-grid">
+                    <label class="field">
+                      <span>Företagsnamn</span>
+                      <input id="manualCompanyNameInput" class="input" type="text" />
+                    </label>
+                    <label class="field">
+                      <span>Telefon</span>
+                      <input id="manualPhoneInput" class="input" type="text" />
+                    </label>
+                    <label class="field">
+                      <span>Kontaktperson</span>
+                      <input id="manualContactInput" class="input" type="text" />
+                    </label>
+                    <label class="field">
+                      <span>Hemsida</span>
+                      <input id="manualWebsiteInput" class="input" type="text" />
+                    </label>
+                    <label class="field">
+                      <span>Adress</span>
+                      <input id="manualAddressInput" class="input" type="text" />
+                    </label>
+                    <label class="field">
+                      <span>Stad / målområde</span>
+                      <input id="manualCityInput" class="input" type="text" />
+                    </label>
+                    <label class="field">
+                      <span>Bransch</span>
+                      <input id="manualBranchInput" class="input" type="text" list="manualBranchSuggestions" placeholder="Välj eller skriv bransch" />
+                      <datalist id="manualBranchSuggestions"></datalist>
+                      <small id="manualBranchHint" class="field-hint">Välj en ren bransch. Om du väljer lista fylls den här automatiskt.</small>
+                    </label>
+                    <label class="field">
+                      <span>Lista / målområde</span>
+                      <select id="manualCampaignSelect" class="input">
+                        <option value="">Ingen lista</option>
+                      </select>
+                      <small id="manualCampaignHint" class="field-hint">Valfri. Välj lista för att fylla bransch och stad automatiskt.</small>
+                    </label>
+                  </div>
+                  <div class="inline-actions">
+                    <button id="createManualLeadButton" class="primary-button" type="button">Skapa kund</button>
+                    <button id="closeManualCreatePanelButton" class="ghost-button" type="button">Stäng</button>
+                    <p id="manualCreateFeedback" class="feedback"></p>
+                  </div>
+                </section>
+
+                <label class="field work-field work-contact-field">
+                  <span>Kontaktperson</span>
+                  <input id="workContactInput" class="input" type="text" placeholder="Namn på kontaktperson" />
+                </label>
+
+                <label class="field work-field work-note-field">
+                  <span>Anteckning</span>
+                  <textarea id="workNoteInput" class="input textarea work-note" rows="8" placeholder="Skriv direkt under samtalet..."></textarea>
+                </label>
+
+                <div id="statusButtons" class="status-grid"></div>
+
+                <div class="reminder-inline">
+                  <label class="field">
+                    <span>Datum</span>
+                    <input id="reminderDateInput" class="input" type="date" />
+                  </label>
+                  <label class="field">
+                    <span>Tid</span>
+                    <input id="reminderTimeInput" class="input" type="time" />
+                  </label>
+                  <label class="field">
+                    <span>Typ</span>
+                    <select id="reminderTypeInput" class="input">
+                      <option value="ring">Ring</option>
+                      <option value="mail">Mail</option>
+                      <option value="följ upp">Följ upp</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label class="field">
+                  <span>Påminnelseanteckning</span>
+                  <input id="reminderNoteInput" class="input" type="text" placeholder="Nästa steg..." />
+                </label>
+
+                <div class="work-footer">
+                  <button id="workPreviousLeadButton" class="ghost-button" type="button">Föregående</button>
+                  <button id="workDeleteLeadButton" class="ghost-button danger-button" type="button">Ta bort kund</button>
+                  <button id="manualBackButton" class="ghost-button" type="button" hidden>Välj ny kund</button>
+                  <button id="workSaveButton" class="secondary-button" type="button">Spara</button>
+                  <button id="workSaveAndNextButton" class="primary-button" type="button">Spara och nästa</button>
+                </div>
+              </div>
+
+              <aside class="work-side">
+                <section class="subpanel">
+                  <p class="section-label">Timeline</p>
+                  <div id="workTimelineList" class="stack-list compact-list"></div>
+                </section>
+              </aside>
+            </div>
+          </section>
+        </section>
+
+        <section id="customersView" class="view">
+          <section class="panel">
+            <div class="section-header">
+              <div>
+                <p class="section-label">Katalog</p>
+                <h3>Kunder grupperade Bransch → Stad → Företag</h3>
+              </div>
+              <div class="segmented-control">
+                <button id="customersCatalogModeButton" class="segment-button is-active" type="button">Katalog</button>
+                <button id="customersAllModeButton" class="segment-button" type="button">Alla</button>
+                <button id="customersTrashModeButton" class="segment-button" type="button">Papperskorg</button>
+              </div>
+            </div>
+
+            <div class="toolbar toolbar-wrap">
+              <input id="customerSearchInput" class="input grow" type="search" placeholder="Sök företag, stad eller anteckning" />
+              <select id="customerStatusFilter" class="input compact-input">
+                <option value="">Alla statusar</option>
+              </select>
+              <input id="customerCategoryFilter" class="input compact-input" type="text" placeholder="Filtrera bransch" />
+              <input id="customerCityFilter" class="input compact-input" type="text" placeholder="Filtrera stad" />
+            </div>
+
+            <div id="customerBulkBar" class="bulk-action-bar" hidden>
+              <strong id="customerSelectionCount">0 markerade</strong>
+              <button id="customerSelectVisibleButton" class="ghost-button" type="button">Markera synliga</button>
+              <button id="customerClearSelectionButton" class="ghost-button" type="button">Avmarkera</button>
+              <select id="customerBulkStatusSelect" class="input compact-input">
+                <option value="">VÃ¤lj ny status</option>
+              </select>
+              <button id="customerBulkStatusButton" class="secondary-button" type="button">Byt status</button>
+              <button id="customerBulkDoneButton" class="secondary-button" type="button">Markera klar</button>
+              <button id="customerBulkDeleteButton" class="ghost-button danger-link" type="button">Ta bort markerade</button>
+            </div>
+
+            <div id="customersCatalog" class="catalog-list"></div>
+            <div id="customersFlatList" class="stack-list" hidden></div>
+            <div id="customersTrashList" class="stack-list" hidden></div>
+          </section>
+        </section>
+
+        <section id="campaignsView" class="view">
+          <div class="panel-grid">
+            <section class="panel">
+              <div class="section-header">
+                <div>
+                  <p class="section-label">Lead Engine</p>
+                  <h3>Google Places multi-search</h3>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <label class="field">
+                  <span>API-nyckel</span>
+                  <input id="apiKeyInput" class="input" type="password" placeholder="Google Maps Platform API key" />
+                </label>
+                <label class="field">
+                  <span>Bransch</span>
+                  <input id="placesIndustryInput" class="input" type="text" placeholder="byggare" />
+                </label>
+                <label class="field">
+                  <span>Målområde / stad</span>
+                  <input id="placesCityInput" class="input" type="text" placeholder="Kalmar, Växjö, Karlskrona" />
+                </label>
+                <label class="field">
+                  <span>Max träffar per query</span>
+                  <input id="placesMaxResultsInput" class="input" type="number" min="1" max="60" value="60" />
+                </label>
+                <label class="field">
+                  <span>Namn på lista</span>
+                  <input id="campaignNameInput" class="input" type="text" placeholder="Byggare i Kalmar" />
+                </label>
+              </div>
+
+              <div class="inline-actions">
+                <button id="searchPlacesButton" class="primary-button" type="button">Kör multi-search</button>
+                <button id="selectAllPlacesButton" class="ghost-button" type="button">Markera alla</button>
+                <button id="clearAllPlacesButton" class="ghost-button" type="button">Avmarkera alla</button>
+                <button id="savePlacesCampaignButton" class="secondary-button" type="button">Spara valda till lista</button>
+              </div>
+
+              <p id="placesFeedback" class="feedback">Sökningen visar queries, råa träffar, unika leads, dubletter och bortfiltrerade resultat.</p>
+              <div id="placesQueryStats" class="stack-list compact-list"></div>
+              <div id="placesResultsList" class="stack-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="section-header">
+                <div>
+                  <p class="section-label">CSV-import</p>
+                  <h3>Importera till befintlig lista</h3>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <label class="field">
+                  <span>Importera till lista</span>
+                  <select id="csvCampaignSelect" class="input">
+                    <option value="">Ingen lista</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>CSV-fil</span>
+                  <input id="csvFileInput" class="input" type="file" accept=".csv,text/csv" />
+                </label>
+              </div>
+              <p id="csvFeedback" class="feedback">Importerade, dubletter och skippade poster visas här.</p>
+
+              <div class="section-header">
+                <div>
+                  <p class="section-label">Telavox</p>
+                  <h3>API-koppling för samtalshistorik</h3>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <label class="field">
+                  <span>Bearer-token</span>
+                  <input id="telavoxTokenInput" class="input" type="password" placeholder="Telavox API token" />
+                </label>
+                <label class="field">
+                  <span>Hämta samtal från datum</span>
+                  <input id="telavoxFromDateInput" class="input" type="date" />
+                </label>
+              </div>
+              <div class="inline-actions">
+                <button id="saveTelavoxSettingsButton" class="secondary-button" type="button">Spara Telavox-inställningar</button>
+              </div>
+              <p id="telavoxSettingsFeedback" class="feedback">Spara token och datumintervall innan du synkar samtal på ett lead.</p>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="section-header">
+              <div>
+                <p class="section-label">Listor / kampanjer</p>
+                <h3>Sparade kampanjer</h3>
+              </div>
+            </div>
+            <div id="campaignCards" class="card-grid"></div>
+          </section>
+        </section>
+
+        <section id="planningView" class="view">
+          <section class="panel">
+            <div class="section-header">
+              <div>
+                <p class="section-label">Planning Engine</p>
+                <h3>Månadsvy baserad på dagsmål, branschvolym och stadssplit</h3>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <label class="field">
+                <span>Lista</span>
+                <select id="planningCampaignSelect" class="input">
+                  <option value="">Alla öppna leads</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Månad</span>
+                <input id="planningMonthInput" class="input" type="month" />
+              </label>
+              <label class="field">
+                <span>Dagsmål</span>
+                <input id="planningDailyTargetInput" class="input" type="number" min="1" value="40" />
+              </label>
+              <label class="field">
+                <span>Prioritera städer</span>
+                <input id="planningCitiesInput" class="input" type="text" placeholder="Kalmar, Växjö" />
+              </label>
+              <label class="field field-span">
+                <span>Prioritera branscher</span>
+                <input id="planningBranchesInput" class="input" type="text" placeholder="Byggare, Frisör" />
+              </label>
+            </div>
+
+            <div class="inline-actions">
+              <button id="planScheduleButton" class="primary-button" type="button">Föreslå plan</button>
+              <button id="clearScheduleButton" class="ghost-button" type="button">Rensa plan</button>
+            </div>
+
+            <p id="planningFeedback" class="feedback">Planeringen visar kalender och block per bransch.</p>
+
+            <div class="planning-layout">
+              <section class="subpanel">
+                <p class="section-label">Kalenderöversikt</p>
+                <div id="planningCalendar" class="calendar-grid"></div>
+              </section>
+              <section class="subpanel">
+                <p class="section-label">Block och stadssplit</p>
+                <div id="planningSummary" class="stack-list"></div>
+              </section>
+            </div>
+          </section>
+        </section>
+
+        <section id="remindersView" class="view">
+          <section class="panel">
+            <div class="section-header">
+              <div>
+                <p class="section-label">To-do</p>
+                <h3>Påminnelser</h3>
+              </div>
+            </div>
+            <div id="remindersList" class="stack-list"></div>
+          </section>
+        </section>
+
+        <section id="exportView" class="view">
+          <section class="panel">
+            <div class="section-header">
+              <div>
+                <p class="section-label">Export</p>
+                <h3>Exportera schema och leads</h3>
+              </div>
+            </div>
+
+            <div class="inline-actions">
+              <button id="exportScheduleCsvButton" class="secondary-button" type="button">Exportera schema CSV</button>
+              <button id="exportScheduleIcsButton" class="secondary-button" type="button">Exportera schema ICS</button>
+              <button id="exportLeadsCsvButton" class="secondary-button" type="button">Exportera leads CSV</button>
+            </div>
+            <div id="planningList" class="stack-list"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div id="profileModal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <section class="modal-card">
+        <div class="section-header">
+          <div>
+            <p class="section-label">Kundkort</p>
+            <h3 id="profileTitle">Inget lead valt</h3>
+          </div>
+          <button id="closeProfileModalButton" class="ghost-button" type="button">Stäng</button>
+        </div>
+
+        <div id="profileMeta" class="meta-grid"></div>
+
+        <div class="inline-actions">
+          <button id="profileCallButton" class="primary-button" type="button">Ring</button>
+          <button id="profileOpenWebsite" class="secondary-button" type="button">Öppna hemsida</button>
+          <button id="profileOpenMaps" class="secondary-button" type="button">Öppna Google Maps</button>
+        </div>
+
+        <section class="subpanel">
+          <p class="section-label">Anteckningar</p>
+          <textarea id="profileNoteEditor" class="input textarea" rows="6" placeholder="Leadets löpande anteckningar"></textarea>
+          <button id="profileSaveNotes" class="primary-button" type="button">Spara anteckningar</button>
+        </section>
+
+        <section class="subpanel">
+          <p class="section-label">Timeline</p>
+          <div id="profileLogList" class="stack-list compact-list"></div>
+        </section>
+
+        <section class="subpanel">
+          <p class="section-label">Påminnelser</p>
+          <div id="profileReminderList" class="stack-list compact-list"></div>
+        </section>
+
+        <section class="subpanel">
+          <div class="section-header">
+            <div>
+              <p class="section-label">Telavox</p>
+              <h4>Samtal kopplade till kunden</h4>
+            </div>
+            <button id="profileSyncTelavoxButton" class="secondary-button" type="button">Synka Telavox</button>
+          </div>
+          <p id="profileTelavoxFeedback" class="feedback">Synka samtalshistorik och inspelningar mot vald kund.</p>
+          <div id="profileTelavoxCalls" class="stack-list compact-list"></div>
+        </section>
+      </section>
+    </div>
+
+    <div id="editLeadModal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-edit-modal="true"></div>
+      <section class="modal-card edit-lead-card">
+        <div class="section-header">
+          <div>
+            <p class="section-label">Redigera kund</p>
+            <h3 id="editLeadTitle">Kunduppgifter</h3>
+          </div>
+          <button id="closeEditLeadModalButton" class="ghost-button" type="button">Stäng</button>
+        </div>
+
+        <div class="form-grid">
+          <label class="field">
+            <span>Företagsnamn</span>
+            <input id="editCompanyNameInput" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span>Telefon</span>
+            <input id="editPhoneInput" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span>Kontaktperson</span>
+            <input id="editContactInput" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span>Hemsida</span>
+            <input id="editWebsiteInput" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span>Adress</span>
+            <input id="editAddressInput" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span>Stad / målområde</span>
+            <input id="editCityInput" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span>Bransch</span>
+            <input id="editBranchInput" class="input" type="text" list="editBranchSuggestions" />
+            <datalist id="editBranchSuggestions"></datalist>
+          </label>
+          <label class="field">
+            <span>Lista / målområde</span>
+            <select id="editCampaignSelect" class="input">
+              <option value="">Ingen lista</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="inline-actions">
+          <button id="saveEditLeadButton" class="primary-button" type="button">Spara ändringar</button>
+          <button id="cancelEditLeadButton" class="ghost-button" type="button">Avbryt</button>
+          <p id="editLeadFeedback" class="feedback"></p>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

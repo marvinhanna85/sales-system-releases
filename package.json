@@ -1,0 +1,66 @@
+{
+  "name": "prospekt-crm",
+  "version": "1.0.0",
+  "description": "Ett enkelt CRM i kompakt appformat for prospektering.",
+  "main": "main.js",
+  "author": "OpenAI Codex",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "test": "node tests/run-tests.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis",
+    "dist:publish": "electron-builder --win nsis --publish always",
+    "release": "powershell -ExecutionPolicy Bypass -File scripts/release.ps1",
+    "release:patch": "powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Bump patch",
+    "release:minor": "powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Bump minor",
+    "release:major": "powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Bump major"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.salesystem.outbound",
+    "productName": "Sales System",
+    "artifactName": "Sales-System-Setup-${version}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "marvinhanna85",
+        "repo": "sales-system-releases",
+        "releaseType": "release"
+      }
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "src/**/*"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Sales System"
+    }
+  }
+}

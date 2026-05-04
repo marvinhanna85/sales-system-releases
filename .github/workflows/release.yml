@@ -1,0 +1,81 @@
+name: Release Windows app
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      version:
+        description: Exact version, for example 1.0.1. Leave empty to use bump.
+        required: false
+        default: ""
+      skip_tests:
+        description: Skip tests
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Release app
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          RELEASE_BUMP: ${{ inputs.bump || 'patch' }}
+          RELEASE_VERSION: ${{ inputs.version || '' }}
+          RELEASE_SKIP_TESTS: ${{ inputs.skip_tests || 'false' }}
+        run: |
+          $Args = @()
+          if ($env:RELEASE_VERSION -ne "") {
+            $Args += "-Version"
+            $Args += $env:RELEASE_VERSION
+          } else {
+            $Args += "-Bump"
+            $Args += $env:RELEASE_BUMP
+          }
+          if ($env:RELEASE_SKIP_TESTS -eq "true") {
+            $Args += "-SkipTests"
+          }
+          ./scripts/release.ps1 @Args
+
+      - name: Save released version in repo
+        shell: pwsh
+        run: |
+          $Version = node -p "require('./package.json').version"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "Release v$Version [skip ci]"
+          git tag "v$Version"
+          git push
+          git push origin "v$Version"

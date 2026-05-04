@@ -1,0 +1,9 @@
+node_modules/
+release/
+*.log
+runtime-debug.log
+dist/
+out/
+.env
+.DS_Store
+Thumbs.db
