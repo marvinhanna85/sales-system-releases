@@ -2263,9 +2263,14 @@ function confirmDiscardDraft() {
   return window.confirm("Du har osparade ändringar i arbetsläget. Vill du lämna utan att spara?");
 }
 
-function openCustomerFilter({ status = "", campaignId = "" }) {
+function openCustomerFilter({ status = "", campaignId = "", resetTextFilters = true } = {}) {
   state.filters.customerStatus = status;
   state.filters.customerCampaignId = campaignId;
+  if (resetTextFilters) {
+    state.filters.customerSearch = "";
+    state.filters.customerCategory = "";
+    state.filters.customerCity = "";
+  }
   state.customersMode = "all";
   state.currentView = "customers";
   render();
@@ -3000,6 +3005,19 @@ function getSelectedPlacesResults() {
   return state.placesResults.filter((lead) => state.placesSelection[lead.id] !== false);
 }
 
+function syncCustomerFilterInputs() {
+  [
+    [elements.customerSearchInput, state.filters.customerSearch],
+    [elements.customerCategoryFilter, state.filters.customerCategory],
+    [elements.customerCityFilter, state.filters.customerCity]
+  ].forEach(([element, value]) => {
+    const nextValue = String(value || "");
+    if (element && element.value !== nextValue) {
+      element.value = nextValue;
+    }
+  });
+}
+
 function updatePlacesSelectionFeedback() {
   if (!state.placesMeta) {
     return;
@@ -3284,6 +3302,7 @@ async function bulkPurgeSelectedCustomers() {
 }
 
 function renderCustomers() {
+  syncCustomerFilterInputs();
   const filtered = getFilteredCustomers();
   const deleted = getFilteredDeletedCustomers();
   const visibleIds = getVisibleCustomerIds();
