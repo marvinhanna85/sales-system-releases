@@ -411,6 +411,34 @@ button {
   gap: 10px;
 }
 
+.recent-activity-panel {
+  gap: 14px;
+}
+
+.dashboard-activity-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.activity-date-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.activity-date-field .input {
+  width: 150px;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 999px;
+}
+
 .week-day-card {
   display: grid;
   gap: 8px;
@@ -825,6 +853,11 @@ button {
   cursor: pointer;
 }
 
+.list-card.is-muted {
+  background: #f8fafc;
+  opacity: 0.86;
+}
+
 .planning-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.85fr);
@@ -931,6 +964,11 @@ button {
 
   .week-overview__head .muted-text {
     text-align: left;
+  }
+
+  .dashboard-activity-controls {
+    justify-content: flex-start;
+    width: 100%;
   }
 
   .week-overview__days {

@@ -63,6 +63,8 @@ const state = {
   placesSelection: {},
   reminderViewMode: "all",
   dashboardTodayExpanded: false,
+  dashboardActivityRange: "today",
+  dashboardActivityDate: formatLocalDate(new Date()),
   dashboardWeather: {
     loading: false,
     loaded: false,
@@ -129,6 +131,10 @@ const elements = {
   dashboardWeekOverview: document.querySelector("#dashboardWeekOverview"),
   dashboardTodayList: document.querySelector("#dashboardTodayList"),
   dashboardTodayToggle: document.querySelector("#dashboardTodayToggle"),
+  dashboardActivityRangeButtons: document.querySelector("#dashboardActivityRangeButtons"),
+  dashboardActivityDateInput: document.querySelector("#dashboardActivityDateInput"),
+  dashboardActivitySummary: document.querySelector("#dashboardActivitySummary"),
+  dashboardActivityList: document.querySelector("#dashboardActivityList"),
   dashboardFocusCopy: document.querySelector("#dashboardFocusCopy"),
   dashboardNextLead: document.querySelector("#dashboardNextLead"),
   dashboardOpenReminders: document.querySelector("#dashboardOpenReminders"),
@@ -317,6 +323,18 @@ function bindEvents() {
   elements.topbarBackButton?.addEventListener("click", goBack);
   elements.dashboardTodayToggle?.addEventListener("click", () => {
     state.dashboardTodayExpanded = !state.dashboardTodayExpanded;
+    renderDashboard();
+  });
+  elements.dashboardActivityRangeButtons?.querySelectorAll("[data-activity-range]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.dashboardActivityRange = button.dataset.activityRange;
+      state.dashboardActivityDate = getDateForDashboardActivityRange(state.dashboardActivityRange);
+      renderDashboard();
+    });
+  });
+  elements.dashboardActivityDateInput?.addEventListener("change", (event) => {
+    state.dashboardActivityRange = "date";
+    state.dashboardActivityDate = event.target.value || formatLocalDate(new Date());
     renderDashboard();
   });
   elements.uiZoomSlider?.addEventListener("input", (event) => {
@@ -807,7 +825,134 @@ function renderDashboard() {
   }
   renderDashboardTodayHero();
   renderDashboardWeekOverview();
+  renderRecentActivity();
   void loadDashboardWeather();
+}
+
+function renderRecentActivity() {
+  if (!elements.dashboardActivityList) {
+    return;
+  }
+
+  const range = getDashboardActivityRange();
+  const entries = getRecentActivityEntries(range);
+  const maxVisible = 10;
+  if (elements.dashboardActivityDateInput) {
+    elements.dashboardActivityDateInput.value = range.dateValue;
+  }
+  elements.dashboardActivityRangeButtons?.querySelectorAll("[data-activity-range]").forEach((button) => {
+    button.classList.toggle("is-active", state.dashboardActivityRange === button.dataset.activityRange);
+  });
+  if (elements.dashboardActivitySummary) {
+    elements.dashboardActivitySummary.textContent = entries.length
+      ? `${entries.length} kunder bearbetade ${range.label.toLowerCase()}. Visar de senaste ${Math.min(entries.length, maxVisible)}.`
+      : `Inga bearbetade kunder ${range.label.toLowerCase()}.`;
+  }
+  renderSimpleList(
+    elements.dashboardActivityList,
+    entries.slice(0, maxVisible).map((entry) => createRecentActivityCard(entry)),
+    `Inga bearbetade kunder ${range.label.toLowerCase()}.`
+  );
+}
+
+function getDashboardActivityRange() {
+  const todayKey = formatLocalDate(new Date());
+  if (state.dashboardActivityRange === "yesterday") {
+    const date = new Date();
+    date.setDate(date.getDate() - 1);
+    const dateKey = formatLocalDate(date);
+    return { startKey: dateKey, endKey: dateKey, dateValue: dateKey, label: "Igår" };
+  }
+  if (state.dashboardActivityRange === "week") {
+    const date = new Date();
+    date.setDate(date.getDate() - 6);
+    return { startKey: formatLocalDate(date), endKey: todayKey, dateValue: todayKey, label: "Senaste 7 dagarna" };
+  }
+  if (state.dashboardActivityRange === "date") {
+    const dateKey = state.dashboardActivityDate || todayKey;
+    return { startKey: dateKey, endKey: dateKey, dateValue: dateKey, label: formatActivityDateLabel(dateKey) };
+  }
+  return { startKey: todayKey, endKey: todayKey, dateValue: todayKey, label: "Idag" };
+}
+
+function getDateForDashboardActivityRange(range) {
+  const date = new Date();
+  if (range === "yesterday") {
+    date.setDate(date.getDate() - 1);
+  }
+  return formatLocalDate(date);
+}
+
+function getRecentActivityEntries(range) {
+  const latestByLead = new Map();
+  state.data.logEntries
+    .filter((entry) => entry.leadId && entry.type !== "created")
+    .forEach((entry) => {
+      const createdAt = new Date(entry.createdAt);
+      if (Number.isNaN(createdAt.getTime())) {
+        return;
+      }
+      const dateKey = formatLocalDate(createdAt);
+      if (dateKey < range.startKey || dateKey > range.endKey) {
+        return;
+      }
+      const lead = findLead(entry.leadId);
+      if (!lead) {
+        return;
+      }
+      const existing = latestByLead.get(entry.leadId);
+      if (!existing || new Date(entry.createdAt) > new Date(existing.entry.createdAt)) {
+        latestByLead.set(entry.leadId, { lead, entry, dateKey });
+      }
+    });
+
+  return [...latestByLead.values()]
+    .sort((left, right) => new Date(right.entry.createdAt) - new Date(left.entry.createdAt));
+}
+
+function createRecentActivityCard(activity) {
+  const { lead, entry, dateKey } = activity;
+  const card = document.createElement("article");
+  card.className = `list-card action-card${lead.isDeleted ? " is-muted" : ""}`;
+  card.innerHTML = `
+    <div class="row-header">
+      <strong>${escapeHtml(lead.companyName || "Okänd kund")}</strong>
+      <span class="status-badge" data-status="${escapeHtml(lead.status)}">${escapeHtml(lead.status)}</span>
+    </div>
+    <p class="meta-line">${escapeHtml(getTimelineTypeLabel(entry.type))} · ${escapeHtml(formatActivityTimeLabel(entry.createdAt, dateKey))}</p>
+    <p class="meta-line">${escapeHtml(entry.text || entry.title || "Aktivitet registrerad")}</p>
+    <p class="meta-line">${escapeHtml(lead.targetMarketCity || lead.normalizedCity || lead.city || "Ort saknas")} · ${escapeHtml(getCampaignName(lead.listId) || "Ingen lista")}</p>
+  `;
+  const actions = document.createElement("div");
+  actions.className = "inline-actions compact-actions";
+  const openButton = document.createElement("button");
+  openButton.type = "button";
+  openButton.className = "secondary-button";
+  openButton.textContent = lead.isDeleted ? "Visa i papperskorg" : "Öppna kund";
+  openButton.addEventListener("click", () => openRecentActivityLead(lead.id));
+  actions.appendChild(openButton);
+  card.appendChild(actions);
+  card.addEventListener("click", () => openRecentActivityLead(lead.id));
+  return card;
+}
+
+function openRecentActivityLead(leadId) {
+  const lead = findLead(leadId);
+  if (!lead) {
+    return;
+  }
+  if (lead.isDeleted) {
+    state.customersMode = "trash";
+    state.filters.customerSearch = lead.companyName || "";
+    state.filters.customerStatus = "";
+    state.filters.customerCategory = "";
+    state.filters.customerCity = "";
+    state.filters.customerCampaignId = "";
+    state.currentView = "customers";
+    render();
+    return;
+  }
+  selectLead(lead.id, "work");
 }
 
 function renderDashboardTodayHero() {
@@ -1050,6 +1195,31 @@ function getRelativeDashboardDayLabel(dateKey, todayKey) {
 function getDashboardWeekday(date) {
   const weekday = new Intl.DateTimeFormat("sv-SE", { weekday: "long" }).format(date);
   return weekday.charAt(0).toUpperCase() + weekday.slice(1);
+}
+
+function formatActivityDateLabel(dateKey) {
+  const today = formatLocalDate(new Date());
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayKey = formatLocalDate(yesterday);
+  if (dateKey === today) {
+    return "Idag";
+  }
+  if (dateKey === yesterdayKey) {
+    return "Igår";
+  }
+  return new Intl.DateTimeFormat("sv-SE", {
+    day: "numeric",
+    month: "short"
+  }).format(new Date(`${dateKey}T12:00:00`));
+}
+
+function formatActivityTimeLabel(value, dateKey) {
+  const time = new Intl.DateTimeFormat("sv-SE", {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+  return `${formatActivityDateLabel(dateKey)} ${time}`;
 }
 
 function getSpecialDayText(date) {
@@ -2389,10 +2559,16 @@ function getTimelineTypeLabel(type) {
   return {
     created: "Skapad",
     note: "Anteckning",
+    update: "Kunddata",
+    activity: "Bearbetad",
     status: "Status",
     reminder: "Reminder",
     "reminder-complete": "Reminder",
     call: "Ring",
+    delete: "Papperskorg",
+    restore: "Återställd",
+    "telavox-sync": "Telavox",
+    "telavox-recording": "Inspelning",
     event: "Händelse"
   }[type] || type;
 }

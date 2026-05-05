@@ -81,6 +81,28 @@
             <div id="dashboardWeekOverview" class="week-overview__days"></div>
           </section>
 
+          <section class="panel recent-activity-panel">
+            <div class="section-header">
+              <div>
+                <p class="section-label">Senast bearbetade</p>
+                <h3>Kunder du hanterat</h3>
+              </div>
+              <div class="dashboard-activity-controls">
+                <div id="dashboardActivityRangeButtons" class="segmented-control">
+                  <button class="segment-button is-active" type="button" data-activity-range="today">Idag</button>
+                  <button class="segment-button" type="button" data-activity-range="yesterday">Igår</button>
+                  <button class="segment-button" type="button" data-activity-range="week">7 dagar</button>
+                </div>
+                <label class="activity-date-field">
+                  <span>Dag</span>
+                  <input id="dashboardActivityDateInput" class="input" type="date" />
+                </label>
+              </div>
+            </div>
+            <p id="dashboardActivitySummary" class="muted-text">Senaste kundaktivitet laddas...</p>
+            <div id="dashboardActivityList" class="stack-list compact-list"></div>
+          </section>
+
           <section class="panel dashboard-today-list-panel" hidden>
             <div class="section-header">
               <div>
