@@ -65,6 +65,8 @@ const state = {
   dashboardTodayExpanded: false,
   dashboardActivityRange: "today",
   dashboardActivityDate: formatLocalDate(new Date()),
+  dashboardActivityPage: 0,
+  dashboardActivityShowAll: false,
   dashboardWeather: {
     loading: false,
     loaded: false,
@@ -135,6 +137,11 @@ const elements = {
   dashboardActivityDateInput: document.querySelector("#dashboardActivityDateInput"),
   dashboardActivitySummary: document.querySelector("#dashboardActivitySummary"),
   dashboardActivityList: document.querySelector("#dashboardActivityList"),
+  dashboardActivityPager: document.querySelector("#dashboardActivityPager"),
+  dashboardActivityPrevButton: document.querySelector("#dashboardActivityPrevButton"),
+  dashboardActivityNextButton: document.querySelector("#dashboardActivityNextButton"),
+  dashboardActivityPageText: document.querySelector("#dashboardActivityPageText"),
+  dashboardActivityShowAllButton: document.querySelector("#dashboardActivityShowAllButton"),
   dashboardFocusCopy: document.querySelector("#dashboardFocusCopy"),
   dashboardNextLead: document.querySelector("#dashboardNextLead"),
   dashboardOpenReminders: document.querySelector("#dashboardOpenReminders"),
@@ -329,12 +336,31 @@ function bindEvents() {
     button.addEventListener("click", () => {
       state.dashboardActivityRange = button.dataset.activityRange;
       state.dashboardActivityDate = getDateForDashboardActivityRange(state.dashboardActivityRange);
+      resetDashboardActivityPaging();
       renderDashboard();
     });
   });
   elements.dashboardActivityDateInput?.addEventListener("change", (event) => {
     state.dashboardActivityRange = "date";
     state.dashboardActivityDate = event.target.value || formatLocalDate(new Date());
+    resetDashboardActivityPaging();
+    renderDashboard();
+  });
+  elements.dashboardActivityPrevButton?.addEventListener("click", () => {
+    state.dashboardActivityShowAll = false;
+    state.dashboardActivityPage = Math.max(0, state.dashboardActivityPage - 1);
+    renderDashboard();
+  });
+  elements.dashboardActivityNextButton?.addEventListener("click", () => {
+    state.dashboardActivityShowAll = false;
+    state.dashboardActivityPage += 1;
+    renderDashboard();
+  });
+  elements.dashboardActivityShowAllButton?.addEventListener("click", () => {
+    state.dashboardActivityShowAll = !state.dashboardActivityShowAll;
+    if (!state.dashboardActivityShowAll) {
+      state.dashboardActivityPage = 0;
+    }
     renderDashboard();
   });
   elements.uiZoomSlider?.addEventListener("input", (event) => {
@@ -836,7 +862,17 @@ function renderRecentActivity() {
 
   const range = getDashboardActivityRange();
   const entries = getRecentActivityEntries(range);
-  const maxVisible = 10;
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(entries.length / pageSize));
+  if (state.dashboardActivityPage >= totalPages) {
+    state.dashboardActivityPage = totalPages - 1;
+  }
+  const startIndex = state.dashboardActivityShowAll ? 0 : state.dashboardActivityPage * pageSize;
+  const visibleEntries = state.dashboardActivityShowAll
+    ? entries
+    : entries.slice(startIndex, startIndex + pageSize);
+  const visibleStart = entries.length ? startIndex + 1 : 0;
+  const visibleEnd = state.dashboardActivityShowAll ? entries.length : Math.min(entries.length, startIndex + pageSize);
   if (elements.dashboardActivityDateInput) {
     elements.dashboardActivityDateInput.value = range.dateValue;
   }
@@ -845,14 +881,39 @@ function renderRecentActivity() {
   });
   if (elements.dashboardActivitySummary) {
     elements.dashboardActivitySummary.textContent = entries.length
-      ? `${entries.length} kunder bearbetade ${range.label.toLowerCase()}. Visar de senaste ${Math.min(entries.length, maxVisible)}.`
+      ? `${entries.length} kunder bearbetade ${range.label.toLowerCase()}. Visar ${state.dashboardActivityShowAll ? "alla" : `${visibleStart}-${visibleEnd}`} av ${entries.length}.`
       : `Inga bearbetade kunder ${range.label.toLowerCase()}.`;
   }
   renderSimpleList(
     elements.dashboardActivityList,
-    entries.slice(0, maxVisible).map((entry) => createRecentActivityCard(entry)),
+    visibleEntries.map((entry) => createRecentActivityCard(entry)),
     `Inga bearbetade kunder ${range.label.toLowerCase()}.`
   );
+  updateDashboardActivityPager(entries.length, totalPages);
+}
+
+function updateDashboardActivityPager(totalCount, totalPages) {
+  if (!elements.dashboardActivityPager) {
+    return;
+  }
+  const showPager = totalCount > 10;
+  elements.dashboardActivityPager.hidden = !showPager;
+  if (!showPager) {
+    return;
+  }
+  elements.dashboardActivityPrevButton.disabled = state.dashboardActivityShowAll || state.dashboardActivityPage <= 0;
+  elements.dashboardActivityNextButton.disabled = state.dashboardActivityShowAll || state.dashboardActivityPage >= totalPages - 1;
+  elements.dashboardActivityPageText.textContent = state.dashboardActivityShowAll
+    ? `Visar alla ${totalCount}`
+    : `Sida ${state.dashboardActivityPage + 1} av ${totalPages}`;
+  elements.dashboardActivityShowAllButton.textContent = state.dashboardActivityShowAll
+    ? "Visa 10 per sida"
+    : `Visa alla ${totalCount}`;
+}
+
+function resetDashboardActivityPaging() {
+  state.dashboardActivityPage = 0;
+  state.dashboardActivityShowAll = false;
 }
 
 function getDashboardActivityRange() {

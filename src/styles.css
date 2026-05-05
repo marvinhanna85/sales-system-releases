@@ -439,6 +439,25 @@ button {
   border-radius: 999px;
 }
 
+.activity-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.activity-pager[hidden] {
+  display: none !important;
+}
+
+.activity-pager span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
 .week-day-card {
   display: grid;
   gap: 8px;
@@ -969,6 +988,10 @@ button {
   .dashboard-activity-controls {
     justify-content: flex-start;
     width: 100%;
+  }
+
+  .activity-pager {
+    justify-content: flex-start;
   }
 
   .week-overview__days {
