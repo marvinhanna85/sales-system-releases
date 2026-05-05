@@ -1700,6 +1700,9 @@ async function saveWorkDraft(goNext) {
   if (goNext && state.workMode === "flow") {
     rememberQueueSkippedLead(lead.id);
     const nextLead = await window.desktopApp.getNextLead({ ...getActiveQueue(), excludeLeadIds: getQueueExcludeIds() });
+    if (nextLead && nextLead.id !== lead.id) {
+      rememberPreviousLead(lead.id);
+    }
     state.selectedLeadId = nextLead?.id || "";
     state.workNotice = nextLead ? "" : "Listan är klar. Välj en ny lista eller gå till planering.";
     syncWorkDraftWithSelectedLead(true);
@@ -3026,6 +3029,13 @@ function rememberQueueSkippedLead(leadId) {
   }
 }
 
+function rememberPreviousLead(leadId) {
+  if (!leadId || state.previousLeadIds[state.previousLeadIds.length - 1] === leadId) {
+    return;
+  }
+  state.previousLeadIds.push(leadId);
+}
+
 function getQueueExcludeIds(extraLeadIds = []) {
   const skippedLeadIds = Array.isArray(state.workQueue.skippedLeadIds) ? state.workQueue.skippedLeadIds : [];
   return [...new Set([...skippedLeadIds, ...extraLeadIds].filter(Boolean))];
@@ -3672,7 +3682,7 @@ async function openNextLead(switchToWork) {
 
   state.workNotice = "";
   if (currentLeadId && currentLeadId !== lead.id) {
-    state.previousLeadIds.push(currentLeadId);
+    rememberPreviousLead(currentLeadId);
   }
   activateLead(lead.id, switchToWork ? "work" : state.currentView);
 }
