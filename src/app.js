@@ -1842,7 +1842,10 @@ function selectLead(leadId, view = state.currentView) {
   if (leadId !== state.selectedLeadId && !confirmDiscardDraft()) {
     return;
   }
+  activateLead(leadId, view);
+}
 
+function activateLead(leadId, view = state.currentView) {
   state.selectedLeadId = leadId;
   state.currentView = view;
   state.manualCreateOpen = false;
@@ -2178,13 +2181,40 @@ function syncWorkDraftWithSelectedLead(force = false) {
 }
 
 function hydrateWorkDraftInputs() {
-  elements.workContactInput.value = state.workDraft.contactName;
-  elements.workNoteInput.value = state.workDraft.note;
-  elements.reminderTypeInput.value = state.workDraft.reminderType;
-  elements.reminderDateInput.value = state.workDraft.reminderDate;
-  elements.reminderTimeInput.value = state.workDraft.reminderTime;
-  elements.reminderNoteInput.value = state.workDraft.reminderNote;
+  const draftInputs = [
+    elements.workContactInput,
+    elements.workNoteInput,
+    elements.reminderTypeInput,
+    elements.reminderDateInput,
+    elements.reminderTimeInput,
+    elements.reminderNoteInput
+  ];
+  const preserveFocusedDraft = draftInputs.some(
+    (input) => document.activeElement === input && input.dataset.workDraftLeadId === state.workDraft.leadId
+  );
+  setInputValue(elements.workContactInput, state.workDraft.contactName, { preserveActive: preserveFocusedDraft });
+  setInputValue(elements.workNoteInput, state.workDraft.note, { preserveActive: preserveFocusedDraft });
+  setInputValue(elements.reminderTypeInput, state.workDraft.reminderType, { preserveActive: preserveFocusedDraft });
+  setInputValue(elements.reminderDateInput, state.workDraft.reminderDate, { preserveActive: preserveFocusedDraft });
+  setInputValue(elements.reminderTimeInput, state.workDraft.reminderTime, { preserveActive: preserveFocusedDraft });
+  setInputValue(elements.reminderNoteInput, state.workDraft.reminderNote, { preserveActive: preserveFocusedDraft });
+  draftInputs.forEach((input) => {
+    input.dataset.workDraftLeadId = state.workDraft.leadId;
+  });
   autoResizeTextarea();
+}
+
+function setInputValue(element, value, options = {}) {
+  if (!element) {
+    return;
+  }
+  if (options.preserveActive && document.activeElement === element) {
+    return;
+  }
+  const nextValue = String(value ?? "");
+  if (element.value !== nextValue) {
+    element.value = nextValue;
+  }
 }
 
 function buildDraftReminder() {
@@ -3644,19 +3674,26 @@ async function openNextLead(switchToWork) {
   if (currentLeadId && currentLeadId !== lead.id) {
     state.previousLeadIds.push(currentLeadId);
   }
-  selectLead(lead.id, switchToWork ? "work" : state.currentView);
+  activateLead(lead.id, switchToWork ? "work" : state.currentView);
 }
 
 function openPreviousLead() {
+  if (!state.previousLeadIds.length) {
+    renderWorkMode();
+    return;
+  }
   if (!confirmDiscardDraft()) {
     return;
   }
-  const previousLeadId = state.previousLeadIds.pop();
+  let previousLeadId = state.previousLeadIds.pop();
+  while (previousLeadId && !findLead(previousLeadId)) {
+    previousLeadId = state.previousLeadIds.pop();
+  }
   if (!previousLeadId) {
     renderWorkMode();
     return;
   }
-  selectLead(previousLeadId, "work");
+  activateLead(previousLeadId, "work");
 }
 
 async function deleteCurrentWorkLead() {
@@ -3706,13 +3743,17 @@ function renderProfile() {
   if (!lead) {
     elements.profileTitle.textContent = "Inget lead valt";
     elements.profileNoteEditor.value = "";
+    elements.profileNoteEditor.dataset.profileLeadId = "";
     elements.profileMeta.innerHTML = `<div class="empty-state">Välj ett lead för att se kundkortet.</div>`;
     elements.profileTelavoxFeedback.textContent = "Välj ett lead för att synka Telavox.";
     return;
   }
 
   elements.profileTitle.textContent = lead.companyName;
-  elements.profileNoteEditor.value = lead.notes || "";
+  setInputValue(elements.profileNoteEditor, lead.notes || "", {
+    preserveActive: elements.profileNoteEditor.dataset.profileLeadId === lead.id
+  });
+  elements.profileNoteEditor.dataset.profileLeadId = lead.id;
   elements.profileTelavoxFeedback.textContent = "Synka samtalshistorik och inspelningar mot vald kund.";
 
   [
@@ -3980,6 +4021,7 @@ function renderWorkMode() {
   elements.workSaveAndNextButton.hidden = !isFlow;
   elements.manualBackButton.hidden = isFlow || !lead;
   elements.manualBackButton.textContent = "Klar / välj ny kund";
+  elements.workPreviousLeadButton.disabled = state.previousLeadIds.length === 0;
   elements.workSaveButton.textContent = "Spara";
   elements.workSaveAndNextButton.textContent = "Nästa";
   elements.toggleManualCreateButton.textContent = "+ Ny kund";
