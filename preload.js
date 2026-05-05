@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("desktopApp", {
   saveSettings: (payload) => ipcRenderer.invoke("app:save-settings", payload),
   createCampaign: (payload) => ipcRenderer.invoke("campaigns:create", payload),
   updateCampaign: (payload) => ipcRenderer.invoke("campaigns:update", payload),
+  deleteCampaign: (payload) => ipcRenderer.invoke("campaigns:delete", payload),
   createLead: (payload) => ipcRenderer.invoke("leads:create", payload),
   importLeads: (payload) => ipcRenderer.invoke("leads:import", payload),
   updateLead: (payload) => ipcRenderer.invoke("leads:update", payload),

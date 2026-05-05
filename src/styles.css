@@ -1068,10 +1068,19 @@ button {
 }
 
 .catalog-row.is-selected,
-.list-card.is-selected {
+.list-card.is-selected,
+.campaign-card.is-selected {
   border-color: rgba(37, 99, 235, 0.55);
   background: linear-gradient(135deg, #ffffff 0%, #f4f8ff 100%);
   box-shadow: 0 14px 34px rgba(37, 99, 235, 0.09);
+}
+
+.campaign-card {
+  cursor: pointer;
+}
+
+.campaign-card .compact-actions {
+  margin-top: 6px;
 }
 
 .catalog-row-main {

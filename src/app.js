@@ -56,6 +56,8 @@ const state = {
   autoOpeningNextLead: false,
   customersMode: "catalog",
   customerSelection: {},
+  campaignsMode: "catalog",
+  campaignSelection: {},
   placesResults: [],
   placesMeta: null,
   placesSelection: {},
@@ -185,6 +187,8 @@ const elements = {
   customerBulkStatusButton: document.querySelector("#customerBulkStatusButton"),
   customerBulkDoneButton: document.querySelector("#customerBulkDoneButton"),
   customerBulkDeleteButton: document.querySelector("#customerBulkDeleteButton"),
+  customerBulkRestoreButton: document.querySelector("#customerBulkRestoreButton"),
+  customerBulkPurgeButton: document.querySelector("#customerBulkPurgeButton"),
   customersCatalog: document.querySelector("#customersCatalog"),
   customersFlatList: document.querySelector("#customersFlatList"),
   customersTrashList: document.querySelector("#customersTrashList"),
@@ -207,6 +211,14 @@ const elements = {
   telavoxFromDateInput: document.querySelector("#telavoxFromDateInput"),
   saveTelavoxSettingsButton: document.querySelector("#saveTelavoxSettingsButton"),
   telavoxSettingsFeedback: document.querySelector("#telavoxSettingsFeedback"),
+  campaignsCatalogModeButton: document.querySelector("#campaignsCatalogModeButton"),
+  campaignsAllModeButton: document.querySelector("#campaignsAllModeButton"),
+  campaignBulkBar: document.querySelector("#campaignBulkBar"),
+  campaignSelectionCount: document.querySelector("#campaignSelectionCount"),
+  campaignSelectVisibleButton: document.querySelector("#campaignSelectVisibleButton"),
+  campaignClearSelectionButton: document.querySelector("#campaignClearSelectionButton"),
+  campaignBulkDeleteButton: document.querySelector("#campaignBulkDeleteButton"),
+  campaignsCatalogList: document.querySelector("#campaignsCatalogList"),
   campaignCards: document.querySelector("#campaignCards"),
   planningCampaignSelect: document.querySelector("#planningCampaignSelect"),
   planningMonthInput: document.querySelector("#planningMonthInput"),
@@ -466,6 +478,26 @@ function bindEvents() {
   elements.customerBulkStatusButton.addEventListener("click", () => bulkUpdateSelectedCustomers(elements.customerBulkStatusSelect.value));
   elements.customerBulkDoneButton.addEventListener("click", () => bulkUpdateSelectedCustomers("Closed"));
   elements.customerBulkDeleteButton.addEventListener("click", bulkDeleteSelectedCustomers);
+  elements.customerBulkRestoreButton.addEventListener("click", bulkRestoreSelectedCustomers);
+  elements.customerBulkPurgeButton.addEventListener("click", bulkPurgeSelectedCustomers);
+
+  elements.campaignsCatalogModeButton.addEventListener("click", () => {
+    state.campaignsMode = "catalog";
+    renderCampaigns();
+  });
+  elements.campaignsAllModeButton.addEventListener("click", () => {
+    state.campaignsMode = "all";
+    renderCampaigns();
+  });
+  elements.campaignSelectVisibleButton.addEventListener("click", () => {
+    selectVisibleCampaigns();
+    renderCampaigns();
+  });
+  elements.campaignClearSelectionButton.addEventListener("click", () => {
+    clearCampaignSelection();
+    renderCampaigns();
+  });
+  elements.campaignBulkDeleteButton.addEventListener("click", bulkDeleteSelectedCampaigns);
 
   elements.searchPlacesButton.addEventListener("click", searchPlacesAction);
   elements.selectAllPlacesButton.addEventListener("click", () => {
@@ -659,6 +691,7 @@ function captureNavigationSnapshot(view) {
     selectedLeadId: state.selectedLeadId,
     workMode: state.workMode,
     customersMode: state.customersMode,
+    campaignsMode: state.campaignsMode,
     filters: { ...state.filters },
     reminderViewMode: state.reminderViewMode,
     selectedPlanningDate: state.selectedPlanningDate,
@@ -675,6 +708,7 @@ function restoreNavigationSnapshot(snapshot) {
   state.selectedLeadId = snapshot.selectedLeadId || "";
   state.workMode = snapshot.workMode || state.workMode;
   state.customersMode = snapshot.customersMode || state.customersMode;
+  state.campaignsMode = snapshot.campaignsMode || state.campaignsMode;
   state.filters = { ...state.filters, ...(snapshot.filters || {}) };
   state.reminderViewMode = snapshot.reminderViewMode || state.reminderViewMode;
   state.selectedPlanningDate = snapshot.selectedPlanningDate || "";
@@ -2801,40 +2835,46 @@ function clearManualCreateForm() {
 }
 
 function getFilteredCustomers() {
+  return state.data.leads.filter((lead) => !lead.isDeleted && customerMatchesFilters(lead));
+}
+
+function getFilteredDeletedCustomers() {
+  return state.data.leads
+    .filter((lead) => lead.isDeleted && customerMatchesFilters(lead))
+    .sort((left, right) => new Date(right.deletedAt || right.updatedAt) - new Date(left.deletedAt || left.updatedAt));
+}
+
+function customerMatchesFilters(lead) {
   const search = normalizeText(state.filters.customerSearch);
   const branchFilter = normalizeText(state.filters.customerCategory);
   const cityFilter = normalizeText(state.filters.customerCity);
 
-  return state.data.leads.filter((lead) => {
-    if (lead.isDeleted) {
-      return false;
-    }
-    if (state.filters.customerStatus && lead.status !== state.filters.customerStatus) {
-      return false;
-    }
-    if (state.filters.customerCampaignId && lead.listId !== state.filters.customerCampaignId) {
-      return false;
-    }
-    if (branchFilter && !normalizeText(lead.normalizedBranch || lead.category).includes(branchFilter)) {
-      return false;
-    }
-    if (cityFilter && !normalizeText(lead.targetMarketCity || lead.normalizedCity || lead.city).includes(cityFilter)) {
-      return false;
-    }
-    if (!search) {
-      return true;
-    }
-    return buildLeadSearchHaystack(lead).includes(search);
-  });
+  if (state.filters.customerStatus && lead.status !== state.filters.customerStatus) {
+    return false;
+  }
+  if (state.filters.customerCampaignId && lead.listId !== state.filters.customerCampaignId) {
+    return false;
+  }
+  if (branchFilter && !normalizeText(lead.normalizedBranch || lead.category).includes(branchFilter)) {
+    return false;
+  }
+  if (cityFilter && !normalizeText(lead.targetMarketCity || lead.normalizedCity || lead.city).includes(cityFilter)) {
+    return false;
+  }
+  if (!search) {
+    return true;
+  }
+  return buildLeadSearchHaystack(lead).includes(search);
 }
 
 function getSelectedCustomerIds() {
+  const trashMode = state.customersMode === "trash";
   return Object.entries(state.customerSelection)
     .filter(([, selected]) => selected)
     .map(([leadId]) => leadId)
     .filter((leadId) => {
       const lead = findLead(leadId);
-      return lead && !lead.isDeleted;
+      return lead && (trashMode ? lead.isDeleted : !lead.isDeleted);
     });
 }
 
@@ -2859,7 +2899,7 @@ function clearCustomerSelection() {
 
 function getVisibleCustomerIds() {
   if (state.customersMode === "trash") {
-    return [];
+    return getFilteredDeletedCustomers().map((lead) => lead.id);
   }
   return getFilteredCustomers().map((lead) => lead.id);
 }
@@ -2884,11 +2924,25 @@ function updateCustomerBulkBar(visibleCount = getVisibleCustomerIds().length) {
     return;
   }
   const selectedCount = getSelectedCustomerIds().length;
-  elements.customerBulkBar.hidden = state.customersMode === "trash" || (!visibleCount && !selectedCount);
+  const trashMode = state.customersMode === "trash";
+  elements.customerBulkBar.hidden = !visibleCount && !selectedCount;
   elements.customerSelectionCount.textContent = `${selectedCount} markerade`;
+  [
+    elements.customerBulkStatusSelect,
+    elements.customerBulkStatusButton,
+    elements.customerBulkDoneButton,
+    elements.customerBulkDeleteButton
+  ].forEach((element) => {
+    element.hidden = trashMode;
+  });
+  [elements.customerBulkRestoreButton, elements.customerBulkPurgeButton].forEach((element) => {
+    element.hidden = !trashMode;
+  });
   elements.customerBulkStatusButton.disabled = !selectedCount || !elements.customerBulkStatusSelect.value;
   elements.customerBulkDoneButton.disabled = !selectedCount;
   elements.customerBulkDeleteButton.disabled = !selectedCount;
+  elements.customerBulkRestoreButton.disabled = !selectedCount;
+  elements.customerBulkPurgeButton.disabled = !selectedCount;
   elements.customerClearSelectionButton.disabled = !selectedCount;
   elements.customerSelectVisibleButton.disabled = !visibleCount;
 }
@@ -2927,9 +2981,35 @@ async function bulkDeleteSelectedCustomers() {
   render();
 }
 
+async function bulkRestoreSelectedCustomers() {
+  const leadIds = getSelectedCustomerIds();
+  if (!leadIds.length) {
+    return;
+  }
+  await Promise.all(leadIds.map((leadId) => window.desktopApp.restoreLead({ leadId })));
+  clearCustomerSelection();
+  await refreshState();
+  render();
+}
+
+async function bulkPurgeSelectedCustomers() {
+  const leadIds = getSelectedCustomerIds();
+  if (!leadIds.length) {
+    return;
+  }
+  if (!window.confirm(`Radera ${leadIds.length} markerade kunder permanent? Det går inte att ångra.`)) {
+    return;
+  }
+  await Promise.all(leadIds.map((leadId) => window.desktopApp.purgeLead({ leadId })));
+  clearCustomerSelection();
+  await refreshState();
+  render();
+}
+
 function renderCustomers() {
   const filtered = getFilteredCustomers();
-  const visibleIds = state.customersMode === "trash" ? [] : filtered.map((lead) => lead.id);
+  const deleted = getFilteredDeletedCustomers();
+  const visibleIds = getVisibleCustomerIds();
   pruneCustomerSelection(visibleIds);
   elements.customersCatalogModeButton.classList.toggle("is-active", state.customersMode === "catalog");
   elements.customersAllModeButton.classList.toggle("is-active", state.customersMode === "all");
@@ -2942,10 +3022,7 @@ function renderCustomers() {
   if (state.customersMode === "trash") {
     renderSimpleList(
       elements.customersTrashList,
-      state.data.leads
-        .filter((lead) => lead.isDeleted)
-        .sort((left, right) => new Date(right.deletedAt || right.updatedAt) - new Date(left.deletedAt || left.updatedAt))
-        .map((lead) => createDeletedLeadCard(lead)),
+      deleted.map((lead) => createDeletedLeadCard(lead)),
       "Papperskorgen är tom."
     );
     return;
@@ -3004,6 +3081,240 @@ function renderCustomers() {
     });
 }
 
+function getVisibleCampaigns() {
+  return state.data.campaigns;
+}
+
+function getVisibleCampaignIds() {
+  return getVisibleCampaigns().map((campaign) => campaign.id);
+}
+
+function getSelectedCampaignIds() {
+  return Object.entries(state.campaignSelection)
+    .filter(([, selected]) => selected)
+    .map(([campaignId]) => campaignId)
+    .filter((campaignId) => state.data.campaigns.some((campaign) => campaign.id === campaignId));
+}
+
+function isCampaignSelected(campaignId) {
+  return Boolean(state.campaignSelection[campaignId]);
+}
+
+function setCampaignSelected(campaignId, selected) {
+  if (!campaignId) {
+    return;
+  }
+  if (selected) {
+    state.campaignSelection[campaignId] = true;
+  } else {
+    delete state.campaignSelection[campaignId];
+  }
+}
+
+function clearCampaignSelection() {
+  state.campaignSelection = {};
+}
+
+function pruneCampaignSelection(visibleIds = getVisibleCampaignIds()) {
+  const visibleSet = new Set(visibleIds);
+  Object.keys(state.campaignSelection).forEach((campaignId) => {
+    if (!visibleSet.has(campaignId)) {
+      delete state.campaignSelection[campaignId];
+    }
+  });
+}
+
+function selectVisibleCampaigns() {
+  getVisibleCampaignIds().forEach((campaignId) => {
+    state.campaignSelection[campaignId] = true;
+  });
+}
+
+function updateCampaignBulkBar(visibleCount = getVisibleCampaignIds().length) {
+  if (!elements.campaignBulkBar) {
+    return;
+  }
+  const selectedCount = getSelectedCampaignIds().length;
+  elements.campaignBulkBar.hidden = !visibleCount && !selectedCount;
+  elements.campaignSelectionCount.textContent = `${selectedCount} markerade`;
+  elements.campaignClearSelectionButton.disabled = !selectedCount;
+  elements.campaignBulkDeleteButton.disabled = !selectedCount;
+  elements.campaignSelectVisibleButton.disabled = !visibleCount;
+}
+
+function getCampaignLeadCounts(campaignId) {
+  const attachedLeads = state.data.leads.filter((lead) => lead.listId === campaignId);
+  return {
+    active: attachedLeads.filter((lead) => !lead.isDeleted).length,
+    deleted: attachedLeads.filter((lead) => lead.isDeleted).length,
+    total: attachedLeads.length
+  };
+}
+
+function getCampaignCatalogLabels(campaign) {
+  const context = getCampaignManualContext(campaign);
+  return {
+    branch: campaign.normalizedBranch || context.branch || "Okategoriserat",
+    market: (campaign.targetMarkets || campaign.cities || []).find(Boolean) || context.city || "Okänt målområde"
+  };
+}
+
+function openCampaignCustomers(campaignId) {
+  state.workQueue.campaignId = campaignId;
+  state.workQueue.plannedDate = "";
+  if (elements.workCampaignFilter) {
+    elements.workCampaignFilter.value = campaignId;
+  }
+  openCustomerFilter({ campaignId });
+}
+
+function clearDeletedCampaignReferences(campaignIds) {
+  const deletedSet = new Set(campaignIds);
+  if (deletedSet.has(state.workQueue.campaignId)) {
+    state.workQueue.campaignId = "";
+  }
+  if (deletedSet.has(state.filters.customerCampaignId)) {
+    state.filters.customerCampaignId = "";
+  }
+  if (deletedSet.has(state.manualSelectedCampaignId)) {
+    state.manualSelectedCampaignId = "";
+  }
+}
+
+async function deleteCampaigns(campaignIds) {
+  const campaigns = campaignIds
+    .map((campaignId) => state.data.campaigns.find((campaign) => campaign.id === campaignId))
+    .filter(Boolean);
+  if (!campaigns.length) {
+    return;
+  }
+
+  const campaignIdSet = new Set(campaigns.map((campaign) => campaign.id));
+  const attachedLeadCount = state.data.leads.filter((lead) => campaignIdSet.has(lead.listId)).length;
+  const message = campaigns.length === 1
+    ? `Ta bort listan "${campaigns[0].name}"? ${attachedLeadCount ? `${attachedLeadCount} kunder behålls men kopplas loss från listan.` : "Listan är tom och tas bort."}`
+    : `Ta bort ${campaigns.length} markerade listor? ${attachedLeadCount ? `${attachedLeadCount} kunder behålls men kopplas loss från listorna.` : "Listorna är tomma och tas bort."}`;
+  if (!window.confirm(message)) {
+    return;
+  }
+
+  for (const campaign of campaigns) {
+    await window.desktopApp.deleteCampaign({ campaignId: campaign.id });
+  }
+  clearDeletedCampaignReferences(campaigns.map((campaign) => campaign.id));
+  clearCampaignSelection();
+  await refreshState();
+  render();
+}
+
+async function bulkDeleteSelectedCampaigns() {
+  await deleteCampaigns(getSelectedCampaignIds());
+}
+
+function createCampaignCard(campaign) {
+  const counts = getCampaignLeadCounts(campaign.id);
+  const selected = isCampaignSelected(campaign.id);
+  const labels = getCampaignCatalogLabels(campaign);
+  const card = document.createElement("article");
+  card.className = `campaign-card${selected ? " is-selected" : ""}`;
+  card.innerHTML = `
+    <div class="lead-list-header">
+      <label class="selection-check" title="Markera lista">
+        <input type="checkbox" data-campaign-select="${escapeHtml(campaign.id)}" ${selected ? "checked" : ""} />
+      </label>
+      <strong class="lead-list-title">${escapeHtml(campaign.name)}</strong>
+      <div class="lead-list-badges">
+        <span class="count-badge">${counts.active}</span>
+      </div>
+    </div>
+    <p class="meta-line">${escapeHtml(campaign.searchQuery || "Ingen sökfras")}</p>
+    <p class="meta-line">Målområde: ${escapeHtml(labels.market)}</p>
+    <p class="meta-line">Bransch: ${escapeHtml(labels.branch)}</p>
+    ${counts.deleted ? `<p class="meta-line">Papperskorg: ${counts.deleted}</p>` : ""}
+  `;
+  card.querySelector("[data-campaign-select]")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+  card.querySelector("[data-campaign-select]")?.addEventListener("change", (event) => {
+    event.stopPropagation();
+    setCampaignSelected(campaign.id, event.target.checked);
+    renderCampaigns();
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "inline-actions compact-actions";
+  const openButton = document.createElement("button");
+  openButton.type = "button";
+  openButton.className = "secondary-button";
+  openButton.textContent = "Visa kunder";
+  openButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openCampaignCustomers(campaign.id);
+  });
+  actions.appendChild(openButton);
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "ghost-button danger-link";
+  deleteButton.textContent = "Ta bort lista";
+  deleteButton.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    await deleteCampaigns([campaign.id]);
+  });
+  actions.appendChild(deleteButton);
+  card.appendChild(actions);
+  card.addEventListener("click", () => openCampaignCustomers(campaign.id));
+  return card;
+}
+
+function renderCampaignCatalog(campaigns) {
+  if (!campaigns.length) {
+    elements.campaignsCatalogList.innerHTML = `<div class="empty-state">Inga kampanjer sparade.</div>`;
+    return;
+  }
+
+  const branchMap = new Map();
+  campaigns.forEach((campaign) => {
+    const labels = getCampaignCatalogLabels(campaign);
+    if (!branchMap.has(labels.branch)) {
+      branchMap.set(labels.branch, new Map());
+    }
+    if (!branchMap.get(labels.branch).has(labels.market)) {
+      branchMap.get(labels.branch).set(labels.market, []);
+    }
+    branchMap.get(labels.branch).get(labels.market).push(campaign);
+  });
+
+  elements.campaignsCatalogList.innerHTML = "";
+  [...branchMap.entries()]
+    .sort((left, right) => left[0].localeCompare(right[0], "sv"))
+    .forEach(([branch, marketMap]) => {
+      const totalCount = [...marketMap.values()].reduce((sum, campaignsInMarket) => sum + campaignsInMarket.length, 0);
+      const branchNode = document.createElement("details");
+      branchNode.className = "catalog-group";
+      branchNode.open = true;
+      branchNode.innerHTML = `<summary>${escapeHtml(branch)} <span>${totalCount}</span></summary>`;
+
+      [...marketMap.entries()]
+        .sort((left, right) => left[0].localeCompare(right[0], "sv"))
+        .forEach(([market, campaignsInMarket]) => {
+          const marketNode = document.createElement("details");
+          marketNode.className = "catalog-subgroup";
+          marketNode.open = true;
+          marketNode.innerHTML = `<summary>${escapeHtml(market)} <span>${campaignsInMarket.length}</span></summary>`;
+          const rows = document.createElement("div");
+          rows.className = "catalog-rows";
+          campaignsInMarket
+            .sort((left, right) => left.name.localeCompare(right.name, "sv"))
+            .forEach((campaign) => rows.appendChild(createCampaignCard(campaign)));
+          marketNode.appendChild(rows);
+          branchNode.appendChild(marketNode);
+        });
+
+      elements.campaignsCatalogList.appendChild(branchNode);
+    });
+}
+
 function renderCampaigns() {
   renderSimpleList(
     elements.placesQueryStats,
@@ -3058,29 +3369,18 @@ function renderCampaigns() {
 
   elements.savePlacesCampaignButton.textContent = `Spara valda till lista (${getSelectedPlacesResults().length})`;
 
+  const campaigns = getVisibleCampaigns();
+  const visibleCampaignIds = getVisibleCampaignIds();
+  pruneCampaignSelection(visibleCampaignIds);
+  elements.campaignsCatalogModeButton.classList.toggle("is-active", state.campaignsMode === "catalog");
+  elements.campaignsAllModeButton.classList.toggle("is-active", state.campaignsMode === "all");
+  elements.campaignsCatalogList.hidden = state.campaignsMode !== "catalog";
+  elements.campaignCards.hidden = state.campaignsMode !== "all";
+  updateCampaignBulkBar(visibleCampaignIds.length);
+  renderCampaignCatalog(campaigns);
   renderSimpleList(
     elements.campaignCards,
-    state.data.campaigns.map((campaign) => {
-      const campaignLeads = state.data.leads.filter((lead) => lead.listId === campaign.id && !lead.isDeleted);
-      const card = document.createElement("article");
-      card.className = "campaign-card";
-      card.innerHTML = `
-        <div class="row-header">
-          <strong>${escapeHtml(campaign.name)}</strong>
-          <span class="count-badge">${campaignLeads.length}</span>
-        </div>
-        <p class="meta-line">${escapeHtml(campaign.searchQuery || "Ingen sökfras")}</p>
-        <p class="meta-line">Målområde: ${escapeHtml((campaign.targetMarkets || campaign.cities || []).join(", ") || "Ej angivet")}</p>
-        <p class="meta-line">Bransch: ${escapeHtml(campaign.normalizedBranch || "Ej angiven")}</p>
-      `;
-      card.addEventListener("click", () => {
-        state.workQueue.campaignId = campaign.id;
-        state.workQueue.plannedDate = "";
-        elements.workCampaignFilter.value = campaign.id;
-        openCustomerFilter({ campaignId: campaign.id });
-      });
-      return card;
-    }),
+    campaigns.map((campaign) => createCampaignCard(campaign)),
     "Inga kampanjer sparade."
   );
 }
@@ -3313,22 +3613,35 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
 }
 
 function createDeletedLeadCard(lead) {
+  const selected = isCustomerSelected(lead.id);
   const card = document.createElement("article");
-  card.className = "list-card";
+  card.className = `list-card${selected ? " is-selected" : ""}`;
   card.innerHTML = `
     <div class="row-header">
+      <label class="selection-check" title="Markera kund">
+        <input type="checkbox" data-customer-select="${escapeHtml(lead.id)}" ${selected ? "checked" : ""} />
+      </label>
       <strong>${escapeHtml(lead.companyName)}</strong>
       <span class="status-badge">${escapeHtml(lead.status)}</span>
     </div>
     <p class="meta-line">${escapeHtml(lead.targetMarketCity || lead.normalizedCity || lead.city || "Ort saknas")} · borttagen ${escapeHtml(lead.deletedAt ? formatDateTime(lead.deletedAt) : "nyligen")}</p>
   `;
+  card.querySelector("[data-customer-select]")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+  card.querySelector("[data-customer-select]")?.addEventListener("change", (event) => {
+    event.stopPropagation();
+    setCustomerSelected(lead.id, event.target.checked);
+    renderCustomers();
+  });
   const actions = document.createElement("div");
   actions.className = "inline-actions compact-actions";
   const restoreButton = document.createElement("button");
   restoreButton.type = "button";
   restoreButton.className = "secondary-button";
   restoreButton.textContent = "Återställ";
-  restoreButton.addEventListener("click", async () => {
+  restoreButton.addEventListener("click", async (event) => {
+    event.stopPropagation();
     await window.desktopApp.restoreLead({ leadId: lead.id });
     await refreshState();
     render();
@@ -3338,7 +3651,8 @@ function createDeletedLeadCard(lead) {
   purgeButton.type = "button";
   purgeButton.className = "ghost-button danger-link";
   purgeButton.textContent = "Radera permanent";
-  purgeButton.addEventListener("click", async () => {
+  purgeButton.addEventListener("click", async (event) => {
+    event.stopPropagation();
     if (!window.confirm(`Radera ${lead.companyName} permanent? Det går inte att ångra.`)) {
       return;
     }

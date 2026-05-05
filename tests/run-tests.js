@@ -1,10 +1,10 @@
 const assert = require("node:assert/strict");
 
-const { buildMonthlyPlan, buildScheduleItems, findDuplicateLead, normalizeLead } = require("../src/main/domain");
+const { buildMonthlyPlan, buildScheduleItems, findDuplicateLead, normalizeCampaign, normalizeLead } = require("../src/main/domain");
 const { DataStore } = require("../src/main/data-store");
 const { buildSearchQueries } = require("../src/main/places-service");
 
-function run() {
+async function run() {
   const existing = [
     normalizeLead({ companyName: "Bygg AB", city: "Kalmar", phone: "070-123 45 67", externalId: "abc" })
   ];
@@ -66,7 +66,29 @@ function run() {
   assert.equal(queueStore.getNextLead({ excludeLeadIds: ["lead-a"] }).id, "lead-b");
   assert.equal(queueStore.getNextLead({ excludeLeadIds: ["lead-a", "lead-b"] }).id, "lead-c");
 
+  const campaignStore = new DataStore(__dirname);
+  campaignStore.save = async () => {};
+  campaignStore.state = {
+    ...campaignStore.state,
+    campaigns: [normalizeCampaign({ id: "campaign-a", name: "Bygg Kalmar" })],
+    leads: [
+      normalizeLead({ id: "campaign-lead-a", companyName: "List Lead A", listId: "campaign-a" }),
+      normalizeLead({ id: "campaign-lead-b", companyName: "List Lead B", listId: "campaign-a", isDeleted: true }),
+      normalizeLead({ id: "other-lead", companyName: "Other", listId: "campaign-b" })
+    ],
+    settings: { ...campaignStore.state.settings, lastSelectedCampaignId: "campaign-a" }
+  };
+  await campaignStore.deleteCampaign("campaign-a");
+  assert.equal(campaignStore.state.campaigns.length, 0);
+  assert.equal(campaignStore.state.leads.find((lead) => lead.id === "campaign-lead-a").listId, "");
+  assert.equal(campaignStore.state.leads.find((lead) => lead.id === "campaign-lead-b").listId, "");
+  assert.equal(campaignStore.state.leads.find((lead) => lead.id === "other-lead").listId, "campaign-b");
+  assert.equal(campaignStore.state.settings.lastSelectedCampaignId, "");
+
   console.log("All tests passed.");
 }
 
-run();
+run().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

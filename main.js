@@ -175,6 +175,7 @@ function registerIpc() {
   ipcMain.handle("app:save-settings", (_event, payload) => store.saveSettings(payload));
   ipcMain.handle("campaigns:create", (_event, payload) => store.createCampaign(payload));
   ipcMain.handle("campaigns:update", (_event, payload) => store.upsertCampaign(payload));
+  ipcMain.handle("campaigns:delete", (_event, payload) => store.deleteCampaign(payload.campaignId));
   ipcMain.handle("leads:create", (_event, payload) => store.createLead(payload));
   ipcMain.handle("leads:import", (_event, payload) => store.importLeads(payload.leads, payload.options));
   ipcMain.handle("leads:update", (_event, payload) => store.updateLead(payload.leadId, payload.patch));

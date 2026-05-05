@@ -147,6 +147,25 @@ class DataStore {
     return this.getState();
   }
 
+  async deleteCampaign(campaignId) {
+    const campaign = this.state.campaigns.find((item) => item.id === campaignId);
+    if (!campaign) {
+      throw new Error("Lista hittades inte.");
+    }
+
+    this.state.leads.forEach((lead) => {
+      if (lead.listId === campaignId) {
+        lead.listId = "";
+      }
+    });
+    this.state.campaigns = this.state.campaigns.filter((item) => item.id !== campaignId);
+    if (this.state.settings.lastSelectedCampaignId === campaignId) {
+      this.state.settings.lastSelectedCampaignId = "";
+    }
+    await this.save();
+    return this.getState();
+  }
+
   async createLead(payload, options = {}) {
     const candidate = normalizeLead(payload);
     if (!candidate.companyName.trim()) {

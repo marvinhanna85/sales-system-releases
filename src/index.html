@@ -284,6 +284,8 @@
               <button id="customerBulkStatusButton" class="secondary-button" type="button">Byt status</button>
               <button id="customerBulkDoneButton" class="secondary-button" type="button">Markera klar</button>
               <button id="customerBulkDeleteButton" class="ghost-button danger-link" type="button">Ta bort markerade</button>
+              <button id="customerBulkRestoreButton" class="secondary-button" type="button" hidden>Återställ markerade</button>
+              <button id="customerBulkPurgeButton" class="ghost-button danger-link" type="button" hidden>Radera permanent</button>
             </div>
 
             <div id="customersCatalog" class="catalog-list"></div>
@@ -389,7 +391,18 @@
                 <p class="section-label">Listor / kampanjer</p>
                 <h3>Sparade kampanjer</h3>
               </div>
+              <div class="segmented-control">
+                <button id="campaignsCatalogModeButton" class="segment-button is-active" type="button">Katalog</button>
+                <button id="campaignsAllModeButton" class="segment-button" type="button">Alla</button>
+              </div>
             </div>
+            <div id="campaignBulkBar" class="bulk-action-bar" hidden>
+              <strong id="campaignSelectionCount">0 markerade</strong>
+              <button id="campaignSelectVisibleButton" class="ghost-button" type="button">Markera synliga</button>
+              <button id="campaignClearSelectionButton" class="ghost-button" type="button">Avmarkera</button>
+              <button id="campaignBulkDeleteButton" class="ghost-button danger-link" type="button">Ta bort markerade listor</button>
+            </div>
+            <div id="campaignsCatalogList" class="catalog-list"></div>
             <div id="campaignCards" class="card-grid"></div>
           </section>
         </section>
