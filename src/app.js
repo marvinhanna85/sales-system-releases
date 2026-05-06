@@ -1488,17 +1488,18 @@ function createReminderTaskCard(reminder, today) {
               </div>
             </div>
             <div class="lead-list-context-row">
-              <span class="lead-list-city">${escapeHtml(cityLabel)}</span>
+              <span class="lead-list-city">${leadListIcon("map-pin")}${escapeHtml(cityLabel)}</span>
+              <span class="lead-list-divider"></span>
               <span class="lead-list-branch">${escapeHtml(branchLabel)}</span>
             </div>
           </div>
           <div class="lead-list-meta-row">
-            <span><b>Påminnelse</b><strong>${escapeHtml(`${formatWeekdayDate(reminder.dueDate)} ${reminder.dueTime || ""}`.trim())}</strong></span>
-            <span><b>Typ</b><strong>${escapeHtml(reminder.type)}</strong></span>
-            <span><b>Kontakt</b><strong>${escapeHtml(lead.contactName || "saknas")}</strong></span>
-            <span><b>Tel</b><strong>${escapeHtml(lead.phone || "saknas")}</strong></span>
+            <span>${leadListIcon("clock")}<b>Påminnelse:</b><strong>${escapeHtml(`${formatWeekdayDate(reminder.dueDate)} ${reminder.dueTime || ""}`.trim())}</strong></span>
+            <span>${leadListIcon("calendar")}<b>Typ:</b><strong>${escapeHtml(reminder.type)}</strong></span>
+            <span>${leadListIcon("user")}<b>Kontakt:</b><strong>${escapeHtml(lead.contactName || "saknas")}</strong></span>
+            <span>${leadListIcon("phone")}<b>Tel:</b><strong>${escapeHtml(lead.phone || "saknas")}</strong></span>
           </div>
-          <p class="lead-list-note-line lead-list-note-line--long${noteText === "Ingen anteckning" ? " is-empty" : ""}"><b>Anteckning:</b> ${escapeHtml(noteText)}</p>
+          <p class="lead-list-note-line lead-list-note-line--long${noteText === "Ingen anteckning" ? " is-empty" : ""}">${leadListIcon("message")}<span><b>Anteckning:</b> ${escapeHtml(noteText)}</span></p>
         </div>
         <div class="lead-list-actions" data-reminder-actions></div>
       </div>
@@ -1508,7 +1509,7 @@ function createReminderTaskCard(reminder, today) {
   const openButton = document.createElement("button");
   openButton.type = "button";
   openButton.className = "secondary-button";
-  openButton.textContent = "Öppna kund";
+  openButton.innerHTML = `${leadListIcon("external")}<span>Öppna kund</span>`;
   openButton.addEventListener("click", (event) => {
     event.stopPropagation();
     selectLead(lead.id, "work");
@@ -1517,7 +1518,7 @@ function createReminderTaskCard(reminder, today) {
   const doneButton = document.createElement("button");
   doneButton.type = "button";
   doneButton.className = "primary-button";
-  doneButton.textContent = "Markera klar";
+  doneButton.innerHTML = `${leadListIcon("check")}<span>Markera klar</span>`;
   doneButton.addEventListener("click", async (event) => {
     event.stopPropagation();
     await window.desktopApp.completeReminder({ reminderId: reminder.id, completed: true });
@@ -2902,6 +2903,21 @@ function renderReminderBadge(reminder) {
   return `<span class="reminder-day-badge is-${tone}">${escapeHtml(label)}</span>`;
 }
 
+function leadListIcon(name) {
+  const paths = {
+    "map-pin": '<path d="M12 21s7-4.4 7-11a7 7 0 0 0-14 0c0 6.6 7 11 7 11Z"></path><circle cx="12" cy="10" r="2.5"></circle>',
+    clock: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
+    user: '<path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="8" r="4"></circle>',
+    phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.4 19.4 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.7.6 2.5a2 2 0 0 1-.5 2.1L8 9.5a16 16 0 0 0 6.5 6.5l1.2-1.2a2 2 0 0 1 2.1-.5c.8.3 1.6.5 2.5.6a2 2 0 0 1 1.7 2Z"></path>',
+    message: '<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"></path><path d="M8 9h8M8 13h5"></path>',
+    check: '<path d="m5 12 4 4L19 6"></path>',
+    trash: '<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6M14 11v6"></path>',
+    calendar: '<path d="M8 2v4M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path>',
+    external: '<path d="M7 17 17 7"></path><path d="M8 7h9v9"></path>'
+  };
+  return `<svg class="lead-list-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths[name] || ""}</svg>`;
+}
+
 function formatLocalDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -4085,17 +4101,18 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
               </div>
             </div>
             <div class="lead-list-context-row">
-              <span class="lead-list-city">${escapeHtml(cityLabel)}</span>
+              <span class="lead-list-city">${leadListIcon("map-pin")}${escapeHtml(cityLabel)}</span>
+              <span class="lead-list-divider"></span>
               <span class="lead-list-branch">${escapeHtml(branchLabel)}</span>
             </div>
           </div>
           <div class="lead-list-meta-row">
-            <span><b>Senast</b><strong>${escapeHtml(latestActivity.label)}</strong></span>
-            <span><b>Kontakt</b><strong>${escapeHtml(lead.contactName || "saknas")}</strong></span>
-            <span><b>Tel</b><strong>${escapeHtml(lead.phone || "saknas")}</strong></span>
-            ${overrideMeta ? `<span><b>Info</b><strong>${escapeHtml(overrideMeta)}</strong></span>` : ""}
+            <span>${leadListIcon("clock")}<b>Senast:</b><strong>${escapeHtml(latestActivity.label)}</strong></span>
+            <span>${leadListIcon("user")}<b>Kontakt:</b><strong>${escapeHtml(lead.contactName || "saknas")}</strong></span>
+            <span>${leadListIcon("phone")}<b>Tel:</b><strong>${escapeHtml(lead.phone || "saknas")}</strong></span>
+            ${overrideMeta ? `<span>${leadListIcon("calendar")}<b>Info:</b><strong>${escapeHtml(overrideMeta)}</strong></span>` : ""}
           </div>
-          <p class="lead-list-note-line${noteText === "Ingen anteckning" ? " is-empty" : ""}"><b>Anteckning:</b> ${escapeHtml(noteText)}</p>
+          <p class="lead-list-note-line${noteText === "Ingen anteckning" ? " is-empty" : ""}">${leadListIcon("message")}<span><b>Anteckning:</b> ${escapeHtml(noteText)}</span></p>
         </div>
         ${showActions ? `<div class="lead-list-actions" data-lead-list-actions></div>` : ""}
       </div>
@@ -4119,7 +4136,7 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
     const doneButton = document.createElement("button");
     doneButton.type = "button";
     doneButton.className = "secondary-button";
-    doneButton.textContent = "Markera klar";
+    doneButton.innerHTML = `${leadListIcon("check")}<span>Markera klar</span>`;
     doneButton.addEventListener("click", async (event) => {
       event.stopPropagation();
       await markLeadDone(lead.id);
@@ -4128,7 +4145,7 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "ghost-button";
-    deleteButton.textContent = "Ta bort";
+    deleteButton.innerHTML = `${leadListIcon("trash")}<span>Ta bort</span>`;
     deleteButton.addEventListener("click", async (event) => {
       event.stopPropagation();
       await softDeleteLeadAction(lead.id);

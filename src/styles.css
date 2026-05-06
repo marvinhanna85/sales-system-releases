@@ -2886,25 +2886,25 @@ body.is-work-view #workSaveAndNextButton {
 
 .lead-work-card {
   gap: 0;
-  padding: 16px 18px;
+  padding: 22px 24px;
   border-color: #d7e4f4;
   background: #fff;
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.03);
+  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.045);
 }
 
 .lead-work-card.reminder-card.is-urgent {
   border-color: rgba(239, 68, 68, 0.42);
-  box-shadow: inset 3px 0 0 #ef4444, 0 8px 20px rgba(37, 99, 235, 0.03);
+  box-shadow: inset 3px 0 0 #ef4444, 0 12px 30px rgba(37, 99, 235, 0.045);
 }
 
 .lead-work-card .lead-list-layout {
   grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  gap: 18px;
 }
 
 .lead-work-card .lead-list-layout.is-selectable {
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 18px;
 }
 
 .lead-work-card .selection-check {
@@ -2914,58 +2914,81 @@ body.is-work-view #workSaveAndNextButton {
 .lead-work-card .lead-list-content,
 .lead-work-card .lead-list-layout.has-actions .lead-list-content {
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
+  gap: 28px;
   align-items: end;
 }
 
 .lead-work-card .lead-list-main {
-  gap: 9px;
+  gap: 11px;
 }
 
 .lead-work-card .lead-list-header {
-  gap: 7px;
+  gap: 10px;
 }
 
 .lead-work-card .lead-list-title-row {
-  gap: 7px 9px;
+  gap: 10px;
 }
 
 .lead-work-card .lead-list-title {
-  font-size: 1.12rem;
-  line-height: 1.18;
+  font-size: 1.28rem;
+  line-height: 1.12;
 }
 
 .lead-work-card .lead-list-context-row {
-  gap: 7px 9px;
+  gap: 12px;
 }
 
 .lead-work-card .lead-list-city {
-  min-height: 27px;
-  padding: 5px 9px;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 11px;
   background: #edf5ff;
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.04);
 }
 
 .lead-work-card .lead-list-branch {
   color: #506783;
+  font-size: 0.94rem;
+  font-weight: 650;
+}
+
+.lead-work-card .lead-list-divider {
+  width: 1px;
+  height: 18px;
+  background: #dbe7f6;
 }
 
 .lead-work-card .lead-list-badges {
-  gap: 7px;
+  gap: 9px;
+}
+
+.lead-work-card .status-badge,
+.lead-work-card .reminder-day-badge {
+  min-height: 30px;
+  padding: 7px 13px;
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.lead-work-card .reminder-day-badge.is-upcoming {
+  background: #f1eaff;
+  color: #5b21b6;
+  border-color: rgba(124, 58, 237, 0.16);
 }
 
 .lead-work-card .lead-list-meta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 18px;
+  gap: 8px 22px;
   align-items: center;
-  padding-top: 2px;
+  padding-top: 1px;
 }
 
 .lead-work-card .lead-list-meta-row span {
   display: inline-flex;
-  gap: 6px;
-  align-items: baseline;
+  gap: 7px;
+  align-items: center;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -2977,9 +3000,11 @@ body.is-work-view #workSaveAndNextButton {
 .lead-work-card .lead-list-meta-row b {
   margin: 0;
   color: #6b7f99;
-  font-size: 0.69rem;
-  line-height: 1;
-  letter-spacing: 0.055em;
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .lead-work-card .lead-list-meta-row strong {
@@ -2992,33 +3017,83 @@ body.is-work-view #workSaveAndNextButton {
 }
 
 .lead-work-card .lead-list-note-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin: 0;
-  padding-top: 9px;
+  padding-top: 10px;
   border-top: 1px solid #e4edf8;
   color: #4d6381;
-  font-size: 0.94rem;
+  font-size: 0.91rem;
   line-height: 1.38;
 }
 
-.lead-work-card .lead-list-note-line--long {
-  -webkit-line-clamp: 3;
+.lead-work-card .lead-list-note-line span {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.lead-work-card .lead-list-note-line--long span {
+  -webkit-line-clamp: 2;
 }
 
 .lead-work-card .lead-list-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 12px;
+  justify-content: flex-end;
   align-self: end;
-  align-content: end;
-  min-width: 218px;
+  min-width: 266px;
   padding-bottom: 0;
 }
 
 .lead-work-card .lead-list-actions .primary-button,
 .lead-work-card .lead-list-actions .secondary-button,
 .lead-work-card .lead-list-actions .ghost-button {
-  min-width: 104px;
-  min-height: 38px;
-  padding: 9px 13px;
-  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 126px;
+  min-height: 46px;
+  padding: 12px 16px;
+  border-radius: 8px;
   font-weight: 750;
+}
+
+.lead-work-card .lead-list-actions .secondary-button {
+  border: 1px solid #d8e6f8;
+  background: #edf5ff;
+  color: #1d4ed8;
+}
+
+.lead-work-card .lead-list-actions .primary-button {
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.14);
+}
+
+.lead-work-card .lead-list-actions .ghost-button {
+  color: #53657c;
+  border-color: #d8e6f8;
+  background: #fff;
+}
+
+.lead-list-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lead-work-card .lead-list-meta-row .lead-list-icon,
+.lead-work-card .lead-list-note-line .lead-list-icon {
+  color: #647893;
 }
 
 .list-card {
