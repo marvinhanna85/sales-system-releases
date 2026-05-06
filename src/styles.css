@@ -2823,19 +2823,19 @@ body.is-work-view #workSaveAndNextButton {
 .reminder-day-badge {
   background: #eef4ff;
   color: #1d4ed8;
-  border-color: rgba(37, 99, 235, 0.14);
+  border-color: rgba(37, 99, 235, 0.12);
 }
 
 .reminder-day-badge.is-today {
-  background: #eef2ff;
-  color: #4338ca;
-  border-color: rgba(79, 70, 229, 0.18);
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: rgba(249, 115, 22, 0.18);
 }
 
 .reminder-day-badge.is-upcoming {
-  background: #f5f0ff;
-  color: #7e22ce;
-  border-color: rgba(126, 34, 206, 0.16);
+  background: #ecfdf5;
+  color: #047857;
+  border-color: rgba(16, 185, 129, 0.18);
 }
 
 @media (max-width: 760px) {
