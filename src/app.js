@@ -1464,21 +1464,47 @@ function createReminderTaskCard(reminder, today) {
     return null;
   }
   const latestLog = getLeadLogs(lead.id)[0];
+  const cityLabel = getLeadCityLabel(lead);
+  const branchLabel = getLeadBranchLabel(lead);
+  const reminderNote = reminder.note || "Ingen anteckning";
+  const latestText = latestLog?.text || "";
+  const noteText = [reminderNote, latestText && latestText !== reminderNote ? latestText : ""]
+    .filter(Boolean)
+    .join(" · ")
+    .slice(0, 420);
   const card = document.createElement("article");
   const overdue = reminder.dueDate && reminder.dueDate < today && !reminder.completed;
-  card.className = `list-card reminder-card${overdue ? " is-urgent" : ""}`;
+  card.className = `list-card lead-work-card reminder-card${overdue ? " is-urgent" : ""}`;
   card.innerHTML = `
-    <div class="row-header">
-      <strong>${escapeHtml(lead.companyName || "Okänd kund")}</strong>
-      <span class="status-badge" data-status="${escapeHtml(lead.status || "Ny")}">${escapeHtml(lead.status || "Ny")}</span>
-      ${renderReminderBadge(reminder)}
+    <div class="lead-list-layout has-actions is-reminder">
+      <div class="lead-list-content">
+        <div class="lead-list-main">
+          <div class="lead-list-header">
+            <div class="lead-list-title-row">
+              <strong class="lead-list-title">${escapeHtml(lead.companyName || "Okänd kund")}</strong>
+              <div class="lead-list-badges">
+                <span class="status-badge" data-status="${escapeHtml(lead.status || "Ny")}">${escapeHtml(lead.status || "Ny")}</span>
+                ${renderReminderBadge(reminder)}
+              </div>
+            </div>
+            <div class="lead-list-context-row">
+              <span class="lead-list-city">${escapeHtml(cityLabel)}</span>
+              <span class="lead-list-branch">${escapeHtml(branchLabel)}</span>
+            </div>
+          </div>
+          <div class="lead-list-meta-row">
+            <span><b>Påminnelse</b><strong>${escapeHtml(`${formatWeekdayDate(reminder.dueDate)} ${reminder.dueTime || ""}`.trim())}</strong></span>
+            <span><b>Typ</b><strong>${escapeHtml(reminder.type)}</strong></span>
+            <span><b>Kontakt</b><strong>${escapeHtml(lead.contactName || "saknas")}</strong></span>
+            <span><b>Tel</b><strong>${escapeHtml(lead.phone || "saknas")}</strong></span>
+          </div>
+          <p class="lead-list-note-line lead-list-note-line--long${noteText === "Ingen anteckning" ? " is-empty" : ""}"><b>Anteckning:</b> ${escapeHtml(noteText)}</p>
+        </div>
+        <div class="lead-list-actions" data-reminder-actions></div>
+      </div>
     </div>
-    <p class="meta-line">${escapeHtml(formatWeekdayDate(reminder.dueDate))} ${escapeHtml(reminder.dueTime || "")} · ${escapeHtml(reminder.type)}</p>
-    <p class="meta-line">${escapeHtml(reminder.note || "Ingen anteckning")}</p>
-    <p class="meta-line">${escapeHtml(latestLog ? latestLog.text : "Ingen aktivitet")}</p>
   `;
-  const actions = document.createElement("div");
-  actions.className = "inline-actions";
+  const actions = card.querySelector("[data-reminder-actions]");
   const openButton = document.createElement("button");
   openButton.type = "button";
   openButton.className = "secondary-button";
@@ -1499,7 +1525,7 @@ function createReminderTaskCard(reminder, today) {
     render();
   });
   actions.appendChild(doneButton);
-  card.appendChild(actions);
+  card.addEventListener("click", () => selectLead(lead.id, "work"));
   return card;
 }
 
@@ -4040,7 +4066,7 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
   const showActions = options.actions !== false;
   const selected = selectable && isCustomerSelected(lead.id);
   const card = document.createElement("article");
-  card.className = `list-card${selected ? " is-selected" : ""}`;
+  card.className = `list-card lead-work-card${selected ? " is-selected" : ""}`;
   card.innerHTML = `
     <div class="lead-list-layout${selectable ? " is-selectable" : ""}${showActions ? " has-actions" : ""}">
       ${selectable ? `
@@ -4064,10 +4090,10 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
             </div>
           </div>
           <div class="lead-list-meta-row">
-            <span><b>Senast</b>${escapeHtml(latestActivity.label)}</span>
-            <span><b>Kontakt</b>${escapeHtml(lead.contactName || "saknas")}</span>
-            <span><b>Tel</b>${escapeHtml(lead.phone || "saknas")}</span>
-            ${overrideMeta ? `<span>${escapeHtml(overrideMeta)}</span>` : ""}
+            <span><b>Senast</b><strong>${escapeHtml(latestActivity.label)}</strong></span>
+            <span><b>Kontakt</b><strong>${escapeHtml(lead.contactName || "saknas")}</strong></span>
+            <span><b>Tel</b><strong>${escapeHtml(lead.phone || "saknas")}</strong></span>
+            ${overrideMeta ? `<span><b>Info</b><strong>${escapeHtml(overrideMeta)}</strong></span>` : ""}
           </div>
           <p class="lead-list-note-line${noteText === "Ingen anteckning" ? " is-empty" : ""}"><b>Anteckning:</b> ${escapeHtml(noteText)}</p>
         </div>
