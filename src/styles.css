@@ -2702,3 +2702,156 @@ body.is-work-view #workSaveAndNextButton {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* List clarity pass: compact rows, stronger city signal, calmer reminder badges. */
+.work-toolbar {
+  align-items: center;
+}
+
+.work-queue-progress {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid rgba(190, 207, 230, 0.9);
+  border-radius: 999px;
+  background: #f7fbff;
+  color: #32527a;
+  font-size: 0.9rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.work-queue-progress[hidden] {
+  display: none;
+}
+
+.work-notice {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 12px;
+  background: #f5f7ff;
+  color: #33408f;
+  font-size: 0.92rem;
+  font-weight: 750;
+}
+
+.lead-list-layout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.lead-list-body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lead-list-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px 12px;
+}
+
+.lead-list-title-block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 7px 10px;
+  min-width: 0;
+}
+
+.lead-list-city {
+  color: #1d4ed8;
+  font-family: var(--font-display);
+  font-size: 1.22rem;
+  line-height: 1.1;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.lead-list-title {
+  color: var(--text);
+  font-size: 1.02rem;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.lead-list-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.lead-list-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+  color: #425a7a;
+  font-size: 0.93rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.lead-list-note-line {
+  margin: 0;
+  color: #5d6f89;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.list-card {
+  gap: 7px;
+}
+
+.catalog-subgroup > summary {
+  color: #1d4ed8;
+  font-size: 1.02rem;
+  font-weight: 850;
+}
+
+.catalog-row-main {
+  grid-template-columns: minmax(0, 1.6fr) minmax(150px, auto) minmax(150px, auto);
+}
+
+.reminder-day-badge {
+  background: #eef4ff;
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.14);
+}
+
+.reminder-day-badge.is-today {
+  background: #eef2ff;
+  color: #4338ca;
+  border-color: rgba(79, 70, 229, 0.18);
+}
+
+.reminder-day-badge.is-upcoming {
+  background: #f5f0ff;
+  color: #7e22ce;
+  border-color: rgba(126, 34, 206, 0.16);
+}
+
+@media (max-width: 760px) {
+  .lead-list-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .lead-list-badges {
+    justify-content: flex-start;
+  }
+
+  .lead-list-meta-row span {
+    flex: 1 1 180px;
+  }
+
+  .catalog-row-main {
+    grid-template-columns: 1fr;
+  }
+}

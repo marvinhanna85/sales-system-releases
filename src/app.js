@@ -62,6 +62,7 @@ const state = {
   placesMeta: null,
   placesSelection: {},
   reminderViewMode: "all",
+  selectedReminderDate: "",
   dashboardTodayExpanded: false,
   dashboardActivityRange: "today",
   dashboardActivityDate: formatLocalDate(new Date()),
@@ -101,6 +102,8 @@ const state = {
     previousLeadIds: [],
     workDraft: createEmptyWorkDraft()
   };
+
+let customerFilterRenderTimer = null;
 
 const elements = {
   navButtons: [...document.querySelectorAll(".nav-button")],
@@ -150,6 +153,7 @@ const elements = {
   workFlowToolbar: document.querySelector("#workFlowToolbar"),
   workManualToolbar: document.querySelector("#workManualToolbar"),
   workCampaignFilter: document.querySelector("#workCampaignFilter"),
+  workQueueProgress: document.querySelector("#workQueueProgress"),
   workNextLeadButton: document.querySelector("#workNextLeadButton"),
   openProfileModalButton: document.querySelector("#openProfileModalButton"),
   manualSearchInput: document.querySelector("#manualSearchInput"),
@@ -325,6 +329,7 @@ function bindEvents() {
   elements.dashboardOpenReminders.addEventListener("click", () => {
     state.currentView = "reminders";
     state.reminderViewMode = "due";
+    state.selectedReminderDate = "";
     render();
   });
   elements.topbarBackButton?.addEventListener("click", goBack);
@@ -496,7 +501,7 @@ function bindEvents() {
   });
   elements.customerSearchInput.addEventListener("input", (event) => {
     state.filters.customerSearch = event.target.value;
-    renderCustomers();
+    scheduleCustomerFilterRender();
   });
   elements.customerStatusFilter.addEventListener("change", (event) => {
     state.filters.customerStatus = event.target.value;
@@ -504,11 +509,11 @@ function bindEvents() {
   });
   elements.customerCategoryFilter.addEventListener("input", (event) => {
     state.filters.customerCategory = event.target.value;
-    renderCustomers();
+    scheduleCustomerFilterRender();
   });
   elements.customerCityFilter.addEventListener("input", (event) => {
     state.filters.customerCity = event.target.value;
-    renderCustomers();
+    scheduleCustomerFilterRender();
   });
   elements.customerSelectVisibleButton.addEventListener("click", () => {
     selectVisibleCustomers();
@@ -738,6 +743,7 @@ function captureNavigationSnapshot(view) {
     campaignsMode: state.campaignsMode,
     filters: { ...state.filters },
     reminderViewMode: state.reminderViewMode,
+    selectedReminderDate: state.selectedReminderDate,
     selectedPlanningDate: state.selectedPlanningDate,
     workQueue: {
       campaignId: state.workQueue.campaignId,
@@ -755,6 +761,7 @@ function restoreNavigationSnapshot(snapshot) {
   state.campaignsMode = snapshot.campaignsMode || state.campaignsMode;
   state.filters = { ...state.filters, ...(snapshot.filters || {}) };
   state.reminderViewMode = snapshot.reminderViewMode || state.reminderViewMode;
+  state.selectedReminderDate = snapshot.selectedReminderDate || "";
   state.selectedPlanningDate = snapshot.selectedPlanningDate || "";
   state.workQueue = {
     ...state.workQueue,
@@ -819,6 +826,7 @@ function renderDashboard() {
       onClick: () => {
         state.currentView = "reminders";
         state.reminderViewMode = "due";
+        state.selectedReminderDate = "";
         render();
       }
     }
@@ -1163,13 +1171,9 @@ function openDashboardWeekDay(day) {
     return;
   }
   state.selectedPlanningDate = day.dateKey;
-  if (day.plannedCount > 0) {
-    state.currentView = "planning";
-    render();
-    return;
-  }
+  state.selectedReminderDate = day.dateKey;
   state.currentView = "reminders";
-  state.reminderViewMode = day.overdueCount || day.reminderCount ? "due" : "all";
+  state.reminderViewMode = "date";
   render();
 }
 
@@ -1386,79 +1390,128 @@ function renderReminders() {
       return lead && !lead.isDeleted;
     })
     .sort((left, right) => `${left.dueDate} ${left.dueTime}`.localeCompare(`${right.dueDate} ${right.dueTime}`));
-  const groups = [
-    {
-      title: "Försenade",
-      items: reminders.filter((reminder) => !reminder.completed && reminder.dueDate && reminder.dueDate < today)
-    },
-    {
-      title: "Idag",
-      items: reminders.filter((reminder) => !reminder.completed && reminder.dueDate === today)
-    },
-    {
-      title: "Kommande",
-      items: reminders.filter((reminder) => !reminder.completed && reminder.dueDate && reminder.dueDate > today)
-    }
-  ];
+  const overdueReminders = reminders.filter((reminder) => !reminder.completed && reminder.dueDate && reminder.dueDate < today);
+  const selectedDate = state.selectedReminderDate || today;
+  const plannedItemsForDate = state.data.scheduleItems
+    .filter((item) => item.plannedDate === selectedDate && !item.completed)
+    .filter((item) => {
+      const lead = findLead(item.leadId);
+      return lead && !lead.isDeleted;
+    })
+    .sort((left, right) => left.orderIndex - right.orderIndex);
 
-  if (state.reminderViewMode === "due") {
-    groups[2].items = [];
-  }
+  const groups = state.reminderViewMode === "date"
+    ? [
+        {
+          title: "Försenade",
+          type: "reminder",
+          items: overdueReminders,
+          urgent: true
+        },
+        {
+          title: `Påminnelser ${formatWeekdayDate(selectedDate)}`,
+          type: "reminder",
+          items: reminders.filter((reminder) => !reminder.completed && reminder.dueDate === selectedDate)
+        },
+        {
+          title: `Bokat ${formatWeekdayDate(selectedDate)}`,
+          type: "planned",
+          items: plannedItemsForDate
+        }
+      ]
+    : [
+        {
+          title: "Försenade",
+          type: "reminder",
+          items: overdueReminders,
+          urgent: true
+        },
+        {
+          title: "Idag",
+          type: "reminder",
+          items: reminders.filter((reminder) => !reminder.completed && reminder.dueDate === today)
+        },
+        {
+          title: "Kommande",
+          type: "reminder",
+          items: state.reminderViewMode === "due"
+            ? []
+            : reminders.filter((reminder) => !reminder.completed && reminder.dueDate && reminder.dueDate > today)
+        }
+      ];
 
   const cards = groups.flatMap((group) => {
     if (!group.items.length) {
       return [];
     }
     const header = document.createElement("article");
-    header.className = `info-card reminder-group-header${group.title.includes("rsenade") ? " is-urgent" : ""}`;
+    header.className = `info-card reminder-group-header${group.urgent ? " is-urgent" : ""}`;
     header.innerHTML = `<strong>${escapeHtml(group.title)}</strong><p class="meta-line">${group.items.length} poster</p>`;
     return [
       header,
-      ...group.items.map((reminder) => {
-        const lead = findLead(reminder.leadId);
-        const latestLog = lead ? getLeadLogs(lead.id)[0] : null;
-        const card = document.createElement("article");
-        const overdue = reminder.dueDate && reminder.dueDate < today && !reminder.completed;
-        card.className = `list-card reminder-card${overdue ? " is-urgent" : ""}`;
-        card.innerHTML = `
-          <div class="row-header">
-            <strong>${escapeHtml(lead?.companyName || "Okänd kund")}</strong>
-            <span class="status-badge">${escapeHtml(lead?.status || "Ny")}</span>
-            ${renderReminderBadge(reminder)}
-          </div>
-          <p class="meta-line">${escapeHtml(reminder.dueDate || "Saknas")} ${escapeHtml(reminder.dueTime || "")} · ${escapeHtml(reminder.type)}</p>
-          <p class="meta-line">${escapeHtml(reminder.note || "Ingen anteckning")}</p>
-          <p class="meta-line">${escapeHtml(latestLog ? latestLog.text : "Ingen aktivitet")}</p>
-        `;
-        const actions = document.createElement("div");
-        actions.className = "inline-actions";
-        const openButton = document.createElement("button");
-        openButton.type = "button";
-        openButton.className = "secondary-button";
-        openButton.textContent = "Öppna kund";
-        openButton.addEventListener("click", (event) => {
-          event.stopPropagation();
-          selectLead(lead?.id, "work");
-        });
-        actions.appendChild(openButton);
-        const doneButton = document.createElement("button");
-        doneButton.type = "button";
-        doneButton.className = "primary-button";
-        doneButton.textContent = "Markera klar";
-        doneButton.addEventListener("click", async (event) => {
-          event.stopPropagation();
-          await window.desktopApp.completeReminder({ reminderId: reminder.id, completed: true });
-          await refreshState();
-          render();
-        });
-        actions.appendChild(doneButton);
-        card.appendChild(actions);
-        return card;
-      })
+      ...group.items
+        .map((item) => group.type === "planned" ? createPlannedDayCard(item) : createReminderTaskCard(item, today))
+        .filter(Boolean)
     ];
   });
 
-  renderSimpleList(elements.remindersList, cards, "Inga påminnelser.");
+  renderSimpleList(elements.remindersList, cards, state.reminderViewMode === "date" ? "Inget bokat den dagen." : "Inga påminnelser.");
+}
+
+function createReminderTaskCard(reminder, today) {
+  const lead = findLead(reminder.leadId);
+  if (!lead) {
+    return null;
+  }
+  const latestLog = getLeadLogs(lead.id)[0];
+  const card = document.createElement("article");
+  const overdue = reminder.dueDate && reminder.dueDate < today && !reminder.completed;
+  card.className = `list-card reminder-card${overdue ? " is-urgent" : ""}`;
+  card.innerHTML = `
+    <div class="row-header">
+      <strong>${escapeHtml(lead.companyName || "Okänd kund")}</strong>
+      <span class="status-badge" data-status="${escapeHtml(lead.status || "Ny")}">${escapeHtml(lead.status || "Ny")}</span>
+      ${renderReminderBadge(reminder)}
+    </div>
+    <p class="meta-line">${escapeHtml(formatWeekdayDate(reminder.dueDate))} ${escapeHtml(reminder.dueTime || "")} · ${escapeHtml(reminder.type)}</p>
+    <p class="meta-line">${escapeHtml(reminder.note || "Ingen anteckning")}</p>
+    <p class="meta-line">${escapeHtml(latestLog ? latestLog.text : "Ingen aktivitet")}</p>
+  `;
+  const actions = document.createElement("div");
+  actions.className = "inline-actions";
+  const openButton = document.createElement("button");
+  openButton.type = "button";
+  openButton.className = "secondary-button";
+  openButton.textContent = "Öppna kund";
+  openButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    selectLead(lead.id, "work");
+  });
+  actions.appendChild(openButton);
+  const doneButton = document.createElement("button");
+  doneButton.type = "button";
+  doneButton.className = "primary-button";
+  doneButton.textContent = "Markera klar";
+  doneButton.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    await window.desktopApp.completeReminder({ reminderId: reminder.id, completed: true });
+    await refreshState();
+    render();
+  });
+  actions.appendChild(doneButton);
+  card.appendChild(actions);
+  return card;
+}
+
+function createPlannedDayCard(item) {
+  const lead = findLead(item.leadId);
+  if (!lead) {
+    return null;
+  }
+  return createLeadListCard(lead, `Bokat ${formatWeekdayDate(item.plannedDate)} · plats ${item.orderIndex + 1}`, {
+    actions: false,
+    selectable: false
+  });
 }
 
 function renderExport() {
@@ -1704,7 +1757,7 @@ async function saveWorkDraft(goNext) {
       rememberPreviousLead(lead.id);
     }
     state.selectedLeadId = nextLead?.id || "";
-    state.workNotice = nextLead ? "" : "Listan är klar. Välj en ny lista eller gå till planering.";
+    state.workNotice = nextLead ? getLeadTransitionNotice(lead, nextLead) : "Listan är klar. Välj en ny lista eller gå till planering.";
     syncWorkDraftWithSelectedLead(true);
   } else {
     state.workNotice = "";
@@ -2008,6 +2061,23 @@ function getNextOpenReminder(leadId) {
   return getLeadReminders(leadId).find((reminder) => !reminder.completed) ?? null;
 }
 
+function getLeadCityLabel(lead) {
+  return lead?.targetMarketCity || lead?.normalizedCity || lead?.city || "Ort saknas";
+}
+
+function getLeadBranchLabel(lead) {
+  return lead?.normalizedBranch || lead?.category || "Bransch saknas";
+}
+
+function getLatestLeadActivity(lead) {
+  const latestLog = lead ? getLeadLogs(lead.id)[0] : null;
+  return {
+    log: latestLog,
+    label: latestLog ? formatDateTime(latestLog.createdAt) : formatDateTime(lead?.updatedAt || new Date()),
+    text: latestLog?.text || lead?.notes || "Ingen aktivitet"
+  };
+}
+
 function getDueReminders() {
   const today = formatLocalDate(new Date());
   return state.data.reminders.filter((reminder) => {
@@ -2173,7 +2243,7 @@ function syncWorkDraftWithSelectedLead(force = false) {
     leadId: lead.id,
     status: lead.status || "Ny",
     contactName: lead.contactName || "",
-    note: "",
+    note: lead.notes || "",
     reminderType: "ring",
     reminderDate: "",
     reminderTime: "",
@@ -3012,10 +3082,26 @@ function syncCustomerFilterInputs() {
     [elements.customerCityFilter, state.filters.customerCity]
   ].forEach(([element, value]) => {
     const nextValue = String(value || "");
-    if (element && element.value !== nextValue) {
+    if (element && document.activeElement !== element && element.value !== nextValue) {
       element.value = nextValue;
     }
   });
+}
+
+function scheduleCustomerFilterRender() {
+  window.clearTimeout(customerFilterRenderTimer);
+  customerFilterRenderTimer = window.setTimeout(() => {
+    customerFilterRenderTimer = null;
+    renderCustomers();
+  }, 120);
+}
+
+function clearScheduledCustomerFilterRender() {
+  if (!customerFilterRenderTimer) {
+    return;
+  }
+  window.clearTimeout(customerFilterRenderTimer);
+  customerFilterRenderTimer = null;
 }
 
 function updatePlacesSelectionFeedback() {
@@ -3028,10 +3114,93 @@ function updatePlacesSelectionFeedback() {
 }
 
 function getActiveQueue() {
+  const plannedDate = state.workQueue.plannedDate || "";
   return {
-    campaignId: state.workQueue.campaignId || elements.workCampaignFilter.value || "",
-    plannedDate: state.workQueue.plannedDate || ""
+    campaignId: plannedDate ? "" : state.workQueue.campaignId || elements.workCampaignFilter.value || "",
+    plannedDate
   };
+}
+
+function getActiveQueueLabel() {
+  const queue = getActiveQueue();
+  if (queue.plannedDate) {
+    return formatWeekdayDate(queue.plannedDate);
+  }
+  if (queue.campaignId) {
+    return getCampaignName(queue.campaignId) || "Vald lista";
+  }
+  return "Alla öppna leads";
+}
+
+function leadMatchesWorkQueue(lead, queue = getActiveQueue()) {
+  if (!lead || lead.isDeleted) {
+    return false;
+  }
+  if (queue.campaignId && lead.listId !== queue.campaignId) {
+    return false;
+  }
+  if (queue.plannedDate) {
+    return state.data.scheduleItems.some((item) => item.leadId === lead.id && item.plannedDate === queue.plannedDate && !item.completed);
+  }
+  return true;
+}
+
+function getWorkQueueProgress(lead = getSelectedLead()) {
+  const queue = getActiveQueue();
+  const skippedIds = [...new Set(state.workQueue.skippedLeadIds || [])];
+  const skippedInQueue = skippedIds.filter((leadId) => leadMatchesWorkQueue(findLead(leadId), queue));
+  const remainingLeads = state.data.leads.filter((item) =>
+    leadMatchesWorkQueue(item, queue) && item.status === "Ny" && !skippedInQueue.includes(item.id)
+  );
+  const selectedInQueue = leadMatchesWorkQueue(lead, queue);
+  const selectedAlreadyRemaining = selectedInQueue && remainingLeads.some((item) => item.id === lead.id);
+  const current = skippedInQueue.length + (selectedInQueue ? 1 : 0);
+  const total = skippedInQueue.length + remainingLeads.length + (selectedInQueue && !selectedAlreadyRemaining ? 1 : 0);
+  return {
+    current: Math.min(current || 0, total || current || 0),
+    total,
+    label: getActiveQueueLabel()
+  };
+}
+
+function renderWorkQueueProgress(lead = getSelectedLead()) {
+  if (!elements.workQueueProgress) {
+    return;
+  }
+  const isFlow = state.workMode === "flow";
+  const progress = getWorkQueueProgress(lead);
+  elements.workQueueProgress.hidden = !isFlow || !progress.total;
+  elements.workQueueProgress.textContent = progress.total
+    ? `${progress.current || 0} av ${progress.total} · ${progress.label}`
+    : "";
+}
+
+function getLeadQueueContext(lead) {
+  return {
+    listId: lead?.listId || "",
+    listName: getCampaignName(lead?.listId) || "Ingen lista",
+    city: getLeadCityLabel(lead),
+    branch: getLeadBranchLabel(lead)
+  };
+}
+
+function getLeadQueueContextLabel(lead) {
+  const context = getLeadQueueContext(lead);
+  return `${context.listName} · ${context.city} · ${context.branch}`;
+}
+
+function getLeadTransitionNotice(previousLead, nextLead) {
+  if (!previousLead || !nextLead || previousLead.id === nextLead.id) {
+    return "";
+  }
+  const previous = getLeadQueueContext(previousLead);
+  const next = getLeadQueueContext(nextLead);
+  const changedList = previous.listId !== next.listId;
+  const changedMarket = previous.city !== next.city || previous.branch !== next.branch;
+  if (!changedList && !changedMarket) {
+    return "";
+  }
+  return `Ny lista/område: ${getLeadQueueContextLabel(next)}`;
 }
 
 function resetWorkQueueProgress() {
@@ -3080,8 +3249,8 @@ function buildLeadSearchHaystack(lead) {
 }
 
 function createCatalogLeadRow(lead) {
-  const latestLog = getLeadLogs(lead.id)[0];
   const nextReminder = getNextOpenReminder(lead.id);
+  const latestActivity = getLatestLeadActivity(lead);
   const selected = isCustomerSelected(lead.id);
   const row = document.createElement("article");
   row.className = `catalog-row${selected ? " is-selected" : ""}`;
@@ -3089,14 +3258,14 @@ function createCatalogLeadRow(lead) {
     <label class="selection-check" title="Markera kund">
       <input type="checkbox" data-customer-select="${escapeHtml(lead.id)}" ${selected ? "checked" : ""} />
     </label>
-    <button class="catalog-row-main" type="button">
-      <div class="lead-inline-head">
+      <button class="catalog-row-main" type="button">
+        <div class="lead-inline-head">
         <strong>${escapeHtml(lead.companyName)}</strong>
         <span class="status-badge" data-status="${escapeHtml(lead.status)}">${escapeHtml(lead.status)}</span>
         ${renderReminderBadge(nextReminder)}
       </div>
-      <span class="catalog-row__meta">${escapeHtml(formatReminderLabel(nextReminder))}</span>
-      <span class="catalog-row__meta">${escapeHtml(latestLog ? formatDateTime(latestLog.createdAt) : formatDateTime(lead.updatedAt))}</span>
+      <span class="catalog-row__meta">${escapeHtml(getLeadCityLabel(lead))} · ${escapeHtml(getLeadBranchLabel(lead))}</span>
+      <span class="catalog-row__meta">Senast: ${escapeHtml(latestActivity.label)}</span>
     </button>
   `;
   row.querySelector("[data-customer-select]")?.addEventListener("change", (event) => {
@@ -3302,6 +3471,7 @@ async function bulkPurgeSelectedCustomers() {
 }
 
 function renderCustomers() {
+  clearScheduledCustomerFilterRender();
   syncCustomerFilterInputs();
   const filtered = getFilteredCustomers();
   const deleted = getFilteredDeletedCustomers();
@@ -3326,7 +3496,7 @@ function renderCustomers() {
 
   renderSimpleList(
     elements.customersFlatList,
-    filtered.map((lead) => createLeadListCard(lead, `${lead.targetMarketCity || lead.normalizedCity || lead.city || "Saknas"} · ${lead.normalizedBranch || lead.category || "Saknas"}`)),
+    filtered.map((lead) => createLeadListCard(lead)),
     "Inga kunder matchar filtren."
   );
 
@@ -3687,6 +3857,7 @@ async function openNextLead(switchToWork) {
   }
 
   const currentLeadId = state.selectedLeadId;
+  const currentLead = getSelectedLead();
   rememberQueueSkippedLead(state.selectedLeadId);
   const lead = await window.desktopApp.getNextLead({ ...getActiveQueue(), excludeLeadIds: getQueueExcludeIds() });
   if (!lead) {
@@ -3699,7 +3870,7 @@ async function openNextLead(switchToWork) {
     return;
   }
 
-  state.workNotice = "";
+  state.workNotice = getLeadTransitionNotice(currentLead, lead);
   if (currentLeadId && currentLeadId !== lead.id) {
     rememberPreviousLead(currentLeadId);
   }
@@ -3740,8 +3911,11 @@ async function startWorkFromPlannedDay(plannedDate) {
   state.workMode = "flow";
   state.workQueue.campaignId = "";
   state.workQueue.plannedDate = plannedDate;
+  if (elements.workCampaignFilter) {
+    elements.workCampaignFilter.value = "";
+  }
   resetWorkQueueProgress();
-  state.workNotice = "";
+  state.workNotice = `Arbetsdag: ${formatWeekdayDate(plannedDate)}`;
   state.currentView = "work";
   const lead = await window.desktopApp.getNextLead({ plannedDate, excludeLeadIds: getQueueExcludeIds() });
   state.selectedLeadId = lead?.id || "";
@@ -3857,33 +4031,43 @@ function renderProfile() {
 }
 
 function createLeadListCard(lead, overrideMeta = "", options = {}) {
-  const latestLog = getLeadLogs(lead.id)[0];
   const nextReminder = getNextOpenReminder(lead.id);
-  const metaText = overrideMeta || `${lead.normalizedBranch || lead.category || "Saknas"} · ${lead.targetMarketCity || lead.normalizedCity || lead.city || "Saknas"}`;
-  const noteText = (latestLog?.text || lead.notes || "Ingen anteckning").slice(0, 180);
-  const selectable = options.selectable || (state.currentView === "customers" && state.customersMode === "all" && !lead.isDeleted);
+  const latestActivity = getLatestLeadActivity(lead);
+  const cityLabel = getLeadCityLabel(lead);
+  const branchLabel = getLeadBranchLabel(lead);
+  const noteText = (lead.notes || latestActivity.text || "Ingen anteckning").slice(0, 180);
+  const selectable = options.selectable ?? (state.currentView === "customers" && state.customersMode === "all" && !lead.isDeleted);
+  const showActions = options.actions !== false;
   const selected = selectable && isCustomerSelected(lead.id);
   const card = document.createElement("article");
   card.className = `list-card${selected ? " is-selected" : ""}`;
   card.innerHTML = `
-    <div class="lead-list-header">
+    <div class="lead-list-layout">
       ${selectable ? `
         <label class="selection-check" title="Markera kund">
           <input type="checkbox" data-customer-select="${escapeHtml(lead.id)}" ${selected ? "checked" : ""} />
         </label>
       ` : ""}
-      <strong class="lead-list-title">${escapeHtml(lead.companyName)}</strong>
-      <div class="lead-list-badges">
-        <span class="status-badge" data-status="${escapeHtml(lead.status)}">${escapeHtml(lead.status)}</span>
-        ${renderReminderBadge(nextReminder)}
+      <div class="lead-list-body">
+        <div class="lead-list-header">
+          <div class="lead-list-title-block">
+            <strong class="lead-list-city">${escapeHtml(cityLabel)}</strong>
+            <span class="lead-list-title">${escapeHtml(lead.companyName)}</span>
+          </div>
+          <div class="lead-list-badges">
+            <span class="status-badge" data-status="${escapeHtml(lead.status)}">${escapeHtml(lead.status)}</span>
+            ${renderReminderBadge(nextReminder)}
+          </div>
+        </div>
+        <div class="lead-list-meta-row">
+          <span>${escapeHtml(branchLabel)}</span>
+          <span>Senast: ${escapeHtml(latestActivity.label)}</span>
+          <span>Kontakt: ${escapeHtml(lead.contactName || "saknas")}</span>
+          <span>Tel: ${escapeHtml(lead.phone || "saknas")}</span>
+          ${overrideMeta ? `<span>${escapeHtml(overrideMeta)}</span>` : ""}
+        </div>
+        <p class="lead-list-note-line">Anteckning: ${escapeHtml(noteText)}</p>
       </div>
-    </div>
-    <div class="lead-list-details">
-      <div><span>Område</span><strong>${escapeHtml(metaText)}</strong></div>
-      <div><span>Påminnelse</span><strong>${escapeHtml(formatReminderLabel(nextReminder))}</strong></div>
-      <div><span>Senaste aktivitet</span><strong>${escapeHtml(latestLog ? formatDateTime(latestLog.createdAt) : formatDateTime(lead.updatedAt))}</strong></div>
-      <div class="lead-list-note"><span>Anteckning</span><strong>${escapeHtml(noteText)}</strong></div>
-      <div><span>Telefon</span><strong>${escapeHtml(lead.phone || "Telefon saknas")}</strong></div>
     </div>
   `;
   card.querySelector("[data-customer-select]")?.addEventListener("click", (event) => {
@@ -3894,27 +4078,29 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
     setCustomerSelected(lead.id, event.target.checked);
     renderCustomers();
   });
-  const actions = document.createElement("div");
-  actions.className = "inline-actions compact-actions";
-  const doneButton = document.createElement("button");
-  doneButton.type = "button";
-  doneButton.className = "secondary-button";
-  doneButton.textContent = "Markera klar";
-  doneButton.addEventListener("click", async (event) => {
-    event.stopPropagation();
-    await markLeadDone(lead.id);
-  });
-  actions.appendChild(doneButton);
-  const deleteButton = document.createElement("button");
-  deleteButton.type = "button";
-  deleteButton.className = "ghost-button";
-  deleteButton.textContent = "Ta bort";
-  deleteButton.addEventListener("click", async (event) => {
-    event.stopPropagation();
-    await softDeleteLeadAction(lead.id);
-  });
-  actions.appendChild(deleteButton);
-  card.appendChild(actions);
+  if (showActions) {
+    const actions = document.createElement("div");
+    actions.className = "inline-actions compact-actions";
+    const doneButton = document.createElement("button");
+    doneButton.type = "button";
+    doneButton.className = "secondary-button";
+    doneButton.textContent = "Markera klar";
+    doneButton.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await markLeadDone(lead.id);
+    });
+    actions.appendChild(doneButton);
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "ghost-button";
+    deleteButton.textContent = "Ta bort";
+    deleteButton.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await softDeleteLeadAction(lead.id);
+    });
+    actions.appendChild(deleteButton);
+    card.appendChild(actions);
+  }
   card.addEventListener("click", () => selectLead(lead.id, "work"));
   return card;
 }
@@ -4054,6 +4240,7 @@ function renderWorkMode() {
   elements.workSaveButton.textContent = "Spara";
   elements.workSaveAndNextButton.textContent = "Nästa";
   elements.toggleManualCreateButton.textContent = "+ Ny kund";
+  renderWorkQueueProgress(lead);
   elements.manualSearchResults.hidden = isFlow || Boolean(lead) || !state.manualSearchTerm.trim();
   elements.manualCreatePanel.hidden = !isManualCreate;
   elements.toggleManualCreateButton.hidden = isFlow || Boolean(lead);
@@ -4106,8 +4293,8 @@ function renderWorkMode() {
   const compactMeta = [
     ["Telefon", lead.phone || "Saknas"],
     ["Kontaktperson", lead.contactName || "Saknas"],
-    ["Målområde", lead.targetMarketCity || lead.normalizedCity || "Saknas"],
-    ["Bransch", lead.normalizedBranch || lead.category || "Saknas"],
+    ["Målområde", getLeadCityLabel(lead)],
+    ["Bransch", getLeadBranchLabel(lead)],
     ["Adress", lead.address || "Saknas"],
     ["Nästa påminnelse", formatReminderLabel(nextReminder)]
   ];
@@ -4122,6 +4309,7 @@ function renderWorkMode() {
   elements.workLeadCard.hidden = false;
   elements.workLeadCard.className = `lead-card ${isFlow ? "is-flow" : "is-manual"}`;
   elements.workLeadCard.innerHTML = `
+    ${state.workNotice ? `<p class="work-notice">${escapeHtml(state.workNotice)}</p>` : ""}
     <div class="lead-card__head lead-card__head--compact">
       <div class="lead-heading">
         <p class="section-label">${escapeHtml(getCampaignName(lead.listId) || "Ingen lista")}</p>

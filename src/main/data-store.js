@@ -290,9 +290,12 @@ class DataStore {
       changes.push(`Kontaktperson: ${payload.contactName || "rensad"}`);
     }
 
-    if (payload.note?.trim()) {
-      lead.notes = payload.note.trim();
-      changes.push(`Anteckning: "${payload.note.trim()}"`);
+    if (payload.note !== undefined) {
+      const nextNote = String(payload.note || "").trim();
+      if (nextNote !== lead.notes) {
+        lead.notes = nextNote;
+        changes.push(nextNote ? `Anteckning: "${nextNote}"` : "Anteckning rensad");
+      }
     }
 
     if (payload.status && payload.status !== previousStatus) {

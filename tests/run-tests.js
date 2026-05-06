@@ -66,6 +66,17 @@ async function run() {
   assert.equal(queueStore.getNextLead({ excludeLeadIds: ["lead-a"] }).id, "lead-b");
   assert.equal(queueStore.getNextLead({ excludeLeadIds: ["lead-a", "lead-b"] }).id, "lead-c");
 
+  const noteStore = new DataStore(__dirname);
+  noteStore.save = async () => {};
+  noteStore.state = {
+    ...noteStore.state,
+    leads: [normalizeLead({ id: "note-lead", companyName: "Note Lead", status: "Ny", notes: "" })]
+  };
+  await noteStore.applyLeadAction({ leadId: "note-lead", status: "Ny", contactName: "", note: " Ringde Madeleine " });
+  assert.equal(noteStore.state.leads[0].notes, "Ringde Madeleine");
+  await noteStore.applyLeadAction({ leadId: "note-lead", status: "Ny", contactName: "", note: "" });
+  assert.equal(noteStore.state.leads[0].notes, "");
+
   const campaignStore = new DataStore(__dirname);
   campaignStore.save = async () => {};
   campaignStore.state = {
