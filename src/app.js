@@ -4051,8 +4051,8 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
       <div class="lead-list-body">
         <div class="lead-list-header">
           <div class="lead-list-title-block">
-            <strong class="lead-list-city">${escapeHtml(cityLabel)}</strong>
-            <span class="lead-list-title">${escapeHtml(lead.companyName)}</span>
+            <strong class="lead-list-title">${escapeHtml(lead.companyName)}</strong>
+            <span class="lead-list-city">${escapeHtml(cityLabel)}</span>
           </div>
           <div class="lead-list-badges">
             <span class="status-badge" data-status="${escapeHtml(lead.status)}">${escapeHtml(lead.status)}</span>
@@ -4060,13 +4060,13 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
           </div>
         </div>
         <div class="lead-list-meta-row">
-          <span>${escapeHtml(branchLabel)}</span>
-          <span>Senast: ${escapeHtml(latestActivity.label)}</span>
-          <span>Kontakt: ${escapeHtml(lead.contactName || "saknas")}</span>
-          <span>Tel: ${escapeHtml(lead.phone || "saknas")}</span>
+          <span><b>Bransch</b>${escapeHtml(branchLabel)}</span>
+          <span><b>Senast</b>${escapeHtml(latestActivity.label)}</span>
+          <span><b>Kontakt</b>${escapeHtml(lead.contactName || "saknas")}</span>
+          <span><b>Tel</b>${escapeHtml(lead.phone || "saknas")}</span>
           ${overrideMeta ? `<span>${escapeHtml(overrideMeta)}</span>` : ""}
         </div>
-        <p class="lead-list-note-line">Anteckning: ${escapeHtml(noteText)}</p>
+        <p class="lead-list-note-line${noteText === "Ingen anteckning" ? " is-empty" : ""}">${escapeHtml(noteText)}</p>
       </div>
     </div>
   `;
