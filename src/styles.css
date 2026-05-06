@@ -2886,24 +2886,25 @@ body.is-work-view #workSaveAndNextButton {
 
 .lead-work-card {
   gap: 0;
-  padding: 18px 20px;
+  padding: 16px 18px;
   border-color: #d7e4f4;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
-  box-shadow: 0 10px 26px rgba(37, 99, 235, 0.035);
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.03);
 }
 
 .lead-work-card.reminder-card.is-urgent {
   border-color: rgba(239, 68, 68, 0.42);
-  box-shadow: inset 3px 0 0 #ef4444, 0 10px 26px rgba(37, 99, 235, 0.035);
+  box-shadow: inset 3px 0 0 #ef4444, 0 8px 20px rgba(37, 99, 235, 0.03);
 }
 
 .lead-work-card .lead-list-layout {
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: 12px;
 }
 
 .lead-work-card .lead-list-layout.is-selectable {
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
 }
 
 .lead-work-card .selection-check {
@@ -2913,34 +2914,34 @@ body.is-work-view #workSaveAndNextButton {
 .lead-work-card .lead-list-content,
 .lead-work-card .lead-list-layout.has-actions .lead-list-content {
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 20px;
-  align-items: stretch;
+  gap: 18px;
+  align-items: end;
 }
 
 .lead-work-card .lead-list-main {
-  gap: 12px;
+  gap: 9px;
 }
 
 .lead-work-card .lead-list-header {
-  gap: 8px;
+  gap: 7px;
 }
 
 .lead-work-card .lead-list-title-row {
-  gap: 8px 10px;
+  gap: 7px 9px;
 }
 
 .lead-work-card .lead-list-title {
-  font-size: 1.14rem;
+  font-size: 1.12rem;
   line-height: 1.18;
 }
 
 .lead-work-card .lead-list-context-row {
-  gap: 8px 10px;
+  gap: 7px 9px;
 }
 
 .lead-work-card .lead-list-city {
-  min-height: 30px;
-  padding: 6px 10px;
+  min-height: 27px;
+  padding: 5px 9px;
   background: #edf5ff;
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.04);
 }
@@ -2954,34 +2955,37 @@ body.is-work-view #workSaveAndNextButton {
 }
 
 .lead-work-card .lead-list-meta-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  align-items: center;
+  padding-top: 2px;
 }
 
 .lead-work-card .lead-list-meta-row span {
-  display: grid;
-  gap: 3px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid #e5edf8;
-  border-radius: 12px;
-  background: #f8fbff;
-  white-space: normal;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  white-space: nowrap;
 }
 
 .lead-work-card .lead-list-meta-row b {
   margin: 0;
-  color: #70839e;
-  font-size: 0.68rem;
+  color: #6b7f99;
+  font-size: 0.69rem;
   line-height: 1;
   letter-spacing: 0.055em;
 }
 
 .lead-work-card .lead-list-meta-row strong {
   overflow: hidden;
-  color: #263a55;
-  font-size: 0.92rem;
+  color: #2d415d;
+  font-size: 0.9rem;
   font-weight: 750;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -2989,11 +2993,11 @@ body.is-work-view #workSaveAndNextButton {
 
 .lead-work-card .lead-list-note-line {
   margin: 0;
-  padding-top: 11px;
+  padding-top: 9px;
   border-top: 1px solid #e4edf8;
   color: #4d6381;
   font-size: 0.94rem;
-  line-height: 1.45;
+  line-height: 1.38;
 }
 
 .lead-work-card .lead-list-note-line--long {
@@ -3003,16 +3007,16 @@ body.is-work-view #workSaveAndNextButton {
 .lead-work-card .lead-list-actions {
   align-self: end;
   align-content: end;
-  min-width: 240px;
-  padding-bottom: 1px;
+  min-width: 218px;
+  padding-bottom: 0;
 }
 
 .lead-work-card .lead-list-actions .primary-button,
 .lead-work-card .lead-list-actions .secondary-button,
 .lead-work-card .lead-list-actions .ghost-button {
-  min-width: 112px;
-  min-height: 40px;
-  padding: 10px 14px;
+  min-width: 104px;
+  min-height: 38px;
+  padding: 9px 13px;
   border-radius: 14px;
   font-weight: 750;
 }
