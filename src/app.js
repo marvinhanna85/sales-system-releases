@@ -4042,31 +4042,36 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
   const card = document.createElement("article");
   card.className = `list-card${selected ? " is-selected" : ""}`;
   card.innerHTML = `
-    <div class="lead-list-layout">
+    <div class="lead-list-layout${selectable ? " is-selectable" : ""}${showActions ? " has-actions" : ""}">
       ${selectable ? `
         <label class="selection-check" title="Markera kund">
           <input type="checkbox" data-customer-select="${escapeHtml(lead.id)}" ${selected ? "checked" : ""} />
         </label>
       ` : ""}
-      <div class="lead-list-body">
-        <div class="lead-list-header">
-          <div class="lead-list-title-block">
-            <strong class="lead-list-title">${escapeHtml(lead.companyName)}</strong>
-            <span class="lead-list-city">${escapeHtml(cityLabel)}</span>
+      <div class="lead-list-content">
+        <div class="lead-list-main">
+          <div class="lead-list-header">
+            <div class="lead-list-title-row">
+              <strong class="lead-list-title">${escapeHtml(lead.companyName)}</strong>
+              <div class="lead-list-badges">
+                <span class="status-badge" data-status="${escapeHtml(lead.status)}">${escapeHtml(lead.status)}</span>
+                ${renderReminderBadge(nextReminder)}
+              </div>
+            </div>
+            <div class="lead-list-context-row">
+              <span class="lead-list-city">${escapeHtml(cityLabel)}</span>
+              <span class="lead-list-branch">${escapeHtml(branchLabel)}</span>
+            </div>
           </div>
-          <div class="lead-list-badges">
-            <span class="status-badge" data-status="${escapeHtml(lead.status)}">${escapeHtml(lead.status)}</span>
-            ${renderReminderBadge(nextReminder)}
+          <div class="lead-list-meta-row">
+            <span><b>Senast</b>${escapeHtml(latestActivity.label)}</span>
+            <span><b>Kontakt</b>${escapeHtml(lead.contactName || "saknas")}</span>
+            <span><b>Tel</b>${escapeHtml(lead.phone || "saknas")}</span>
+            ${overrideMeta ? `<span>${escapeHtml(overrideMeta)}</span>` : ""}
           </div>
+          <p class="lead-list-note-line${noteText === "Ingen anteckning" ? " is-empty" : ""}"><b>Anteckning:</b> ${escapeHtml(noteText)}</p>
         </div>
-        <div class="lead-list-meta-row">
-          <span><b>Bransch</b>${escapeHtml(branchLabel)}</span>
-          <span><b>Senast</b>${escapeHtml(latestActivity.label)}</span>
-          <span><b>Kontakt</b>${escapeHtml(lead.contactName || "saknas")}</span>
-          <span><b>Tel</b>${escapeHtml(lead.phone || "saknas")}</span>
-          ${overrideMeta ? `<span>${escapeHtml(overrideMeta)}</span>` : ""}
-        </div>
-        <p class="lead-list-note-line${noteText === "Ingen anteckning" ? " is-empty" : ""}">${escapeHtml(noteText)}</p>
+        ${showActions ? `<div class="lead-list-actions" data-lead-list-actions></div>` : ""}
       </div>
     </div>
   `;
@@ -4079,8 +4084,12 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
     renderCustomers();
   });
   if (showActions) {
-    const actions = document.createElement("div");
-    actions.className = "inline-actions compact-actions";
+    let actions = card.querySelector("[data-lead-list-actions]");
+    if (!actions) {
+      actions = document.createElement("div");
+      card.querySelector(".lead-list-content")?.appendChild(actions);
+    }
+    actions.className = "lead-list-actions";
     const doneButton = document.createElement("button");
     doneButton.type = "button";
     doneButton.className = "secondary-button";
@@ -4099,7 +4108,6 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
       await softDeleteLeadAction(lead.id);
     });
     actions.appendChild(deleteButton);
-    card.appendChild(actions);
   }
   card.addEventListener("click", () => selectLead(lead.id, "work"));
   return card;

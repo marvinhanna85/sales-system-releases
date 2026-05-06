@@ -2737,45 +2737,61 @@ body.is-work-view #workSaveAndNextButton {
   font-weight: 750;
 }
 
-.lead-list-layout {
+.list-card .lead-list-layout {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 13px;
   align-items: start;
 }
 
-.lead-list-body {
+.list-card .lead-list-layout.is-selectable {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.list-card .lead-list-content {
   display: grid;
-  gap: 9px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
   min-width: 0;
 }
 
-.lead-list-header {
-  display: grid;
+.list-card .lead-list-layout.has-actions .lead-list-content {
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
 }
 
-.lead-list-title-block {
+.list-card .lead-list-main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.list-card .lead-list-header {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.list-card .lead-list-title-row,
+.list-card .lead-list-context-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 7px 10px;
+  gap: 7px 9px;
   min-width: 0;
 }
 
-.lead-list-title {
+.list-card .lead-list-title {
   min-width: 0;
   color: var(--text);
   font-family: var(--font-display);
-  font-size: 1.14rem;
+  font-size: 1.18rem;
   font-weight: 900;
-  line-height: 1.15;
+  line-height: 1.18;
   letter-spacing: 0;
 }
 
-.lead-list-city {
+.list-card .lead-list-city {
   display: inline-flex;
   align-items: center;
   min-height: 28px;
@@ -2790,34 +2806,41 @@ body.is-work-view #workSaveAndNextButton {
   letter-spacing: 0;
 }
 
-.lead-list-badges {
+.list-card .lead-list-branch {
+  color: #526985;
+  font-size: 0.94rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.list-card .lead-list-badges {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: flex-start;
 }
 
-.lead-list-meta-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
-  gap: 8px;
+.list-card .lead-list-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 17px;
   color: #334963;
   font-size: 0.92rem;
   line-height: 1.3;
 }
 
-.lead-list-meta-row span {
+.list-card .lead-list-meta-row span {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
   min-width: 0;
-  padding: 8px 9px;
-  border: 1px solid #e6edf6;
-  border-radius: 10px;
-  background: #f8fbff;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.lead-list-meta-row b {
+.list-card .lead-list-meta-row b {
   margin-right: 6px;
   color: #6a7f9a;
   font-size: 0.74rem;
@@ -2825,19 +2848,40 @@ body.is-work-view #workSaveAndNextButton {
   text-transform: uppercase;
 }
 
-.lead-list-note-line {
+.list-card .lead-list-note-line {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  margin: 0;
+  margin: 2px 0 0;
   overflow: hidden;
   color: #4f6380;
   font-size: 0.94rem;
   line-height: 1.4;
 }
 
-.lead-list-note-line.is-empty {
+.list-card .lead-list-note-line b {
+  color: #526985;
+  font-weight: 900;
+}
+
+.list-card .lead-list-note-line.is-empty {
   color: #8998ad;
+}
+
+.list-card .lead-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  align-self: center;
+  min-width: 232px;
+}
+
+.list-card .lead-list-actions .secondary-button,
+.list-card .lead-list-actions .ghost-button {
+  min-width: 106px;
+  padding: 9px 12px;
+  white-space: nowrap;
 }
 
 .list-card {
@@ -2874,17 +2918,22 @@ body.is-work-view #workSaveAndNextButton {
 }
 
 @media (max-width: 760px) {
-  .lead-list-layout {
+  .list-card .lead-list-layout {
     grid-template-columns: 1fr;
   }
 
-  .lead-list-badges {
+  .list-card .lead-list-layout.has-actions .lead-list-content {
+    grid-template-columns: 1fr;
+  }
+
+  .list-card .lead-list-actions {
     justify-content: flex-start;
+    min-width: 0;
   }
 
-  .lead-list-header,
-  .lead-list-meta-row {
-    grid-template-columns: 1fr;
+  .list-card .lead-list-actions .secondary-button,
+  .list-card .lead-list-actions .ghost-button {
+    flex: 1 1 132px;
   }
 
   .catalog-row-main {
