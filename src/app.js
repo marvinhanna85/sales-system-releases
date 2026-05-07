@@ -1494,10 +1494,10 @@ function createReminderTaskCard(reminder, today) {
             </div>
           </div>
           <div class="lead-list-meta-row">
-            <span>${leadListIcon("clock")}<b>Påminnelse:</b><strong>${escapeHtml(`${formatWeekdayDate(reminder.dueDate)} ${reminder.dueTime || ""}`.trim())}</strong></span>
-            <span>${leadListIcon("calendar")}<b>Typ:</b><strong>${escapeHtml(reminder.type)}</strong></span>
             <span>${leadListIcon("user")}<b>Kontakt:</b><strong>${escapeHtml(lead.contactName || "saknas")}</strong></span>
+            <span>${leadListIcon("clock")}<b>Påminnelse:</b><strong>${escapeHtml(`${formatWeekdayDate(reminder.dueDate)} ${reminder.dueTime || ""}`.trim())}</strong></span>
             <span>${leadListIcon("phone")}<b>Tel:</b><strong>${escapeHtml(lead.phone || "saknas")}</strong></span>
+            <span>${leadListIcon("calendar")}<b>Typ:</b><strong>${escapeHtml(reminder.type)}</strong></span>
           </div>
           <p class="lead-list-note-line lead-list-note-line--long${noteText === "Ingen anteckning" ? " is-empty" : ""}">${leadListIcon("message")}<span><b>Anteckning:</b> ${escapeHtml(noteText)}</span></p>
         </div>
@@ -4077,7 +4077,7 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
   const latestActivity = getLatestLeadActivity(lead);
   const cityLabel = getLeadCityLabel(lead);
   const branchLabel = getLeadBranchLabel(lead);
-  const noteText = (lead.notes || latestActivity.text || "Ingen anteckning").slice(0, 180);
+  const noteText = (lead.notes || latestActivity.text || "Ingen anteckning").slice(0, 300);
   const selectable = options.selectable ?? (state.currentView === "customers" && state.customersMode === "all" && !lead.isDeleted);
   const showActions = options.actions !== false;
   const selected = selectable && isCustomerSelected(lead.id);
@@ -4107,8 +4107,8 @@ function createLeadListCard(lead, overrideMeta = "", options = {}) {
             </div>
           </div>
           <div class="lead-list-meta-row">
-            <span>${leadListIcon("clock")}<b>Senast:</b><strong>${escapeHtml(latestActivity.label)}</strong></span>
             <span>${leadListIcon("user")}<b>Kontakt:</b><strong>${escapeHtml(lead.contactName || "saknas")}</strong></span>
+            <span>${leadListIcon("clock")}<b>Senast:</b><strong>${escapeHtml(latestActivity.label)}</strong></span>
             <span>${leadListIcon("phone")}<b>Tel:</b><strong>${escapeHtml(lead.phone || "saknas")}</strong></span>
             ${overrideMeta ? `<span>${leadListIcon("calendar")}<b>Info:</b><strong>${escapeHtml(overrideMeta)}</strong></span>` : ""}
           </div>
