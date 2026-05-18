@@ -204,6 +204,7 @@ function createEmptyState() {
     callRecords: [],
     settings: {
       apiKey: "",
+      openaiApiKey: "",
       telavoxToken: "",
       telavoxFromDate: "",
       dailyTarget: 40,

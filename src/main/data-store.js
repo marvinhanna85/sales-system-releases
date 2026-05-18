@@ -16,35 +16,152 @@ const { inferBranchFromContext, inferCityFromContext, inferCountryFromContext, i
 const { buildMonthlyPlan } = require("./engines/planning-engine");
 const { fetchTelavoxCalls, fetchTelavoxRecording } = require("./services/telavox-service");
 
+function timestampForFileName() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+function escapeControlCharactersInJsonStrings(raw) {
+  let inString = false;
+  let escaping = false;
+  let repaired = "";
+  let changed = false;
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index];
+    const code = char.charCodeAt(0);
+
+    if (!inString) {
+      if (char === "\"") {
+        inString = true;
+      }
+      repaired += char;
+      continue;
+    }
+
+    if (escaping) {
+      repaired += char;
+      escaping = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      repaired += char;
+      escaping = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      repaired += char;
+      inString = false;
+      continue;
+    }
+
+    if (code < 0x20) {
+      changed = true;
+      if (char === "\n") {
+        repaired += "\\n";
+      } else if (char === "\r") {
+        repaired += "\\r";
+      } else if (char === "\t") {
+        repaired += "\\t";
+      } else {
+        repaired += `\\u${code.toString(16).padStart(4, "0")}`;
+      }
+      continue;
+    }
+
+    repaired += char;
+  }
+
+  return changed ? repaired : raw;
+}
+
+function dedupeById(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    if (!item.id || seen.has(item.id)) {
+      return false;
+    }
+    seen.add(item.id);
+    return true;
+  });
+}
+
 class DataStore {
   constructor(baseDir) {
     this.baseDir = baseDir;
     this.filePath = path.join(baseDir, "sales-system.json");
+    this.backupPath = `${this.filePath}.bak`;
+    this.skipNextBackup = false;
+    this.saveQueue = Promise.resolve();
     this.state = createEmptyState();
   }
 
   async init() {
     await fs.mkdir(this.baseDir, { recursive: true });
+    const parsed = await this.loadStoredState();
+    if (!parsed) {
+      await this.save();
+      return;
+    }
+    this.state = {
+      ...createEmptyState(),
+      ...parsed,
+      leads: Array.isArray(parsed.leads) ? parsed.leads.map((lead) => this.migrateLead(lead, parsed.campaigns || [])) : [],
+      logEntries: Array.isArray(parsed.logEntries) ? parsed.logEntries.map(normalizeLogEntry) : [],
+      reminders: Array.isArray(parsed.reminders) ? parsed.reminders.map(normalizeReminder) : [],
+      campaigns: Array.isArray(parsed.campaigns) ? dedupeById(parsed.campaigns.map(normalizeCampaign)) : [],
+      scheduleItems: Array.isArray(parsed.scheduleItems) ? parsed.scheduleItems.map(normalizeScheduleItem) : [],
+      callRecords: Array.isArray(parsed.callRecords) ? parsed.callRecords.map(normalizeCallRecord) : [],
+      settings: { ...createEmptyState().settings, ...(parsed.settings || {}) }
+    };
+    this.refreshAllCampaignCounters();
+    await this.save();
+  }
+
+  async loadStoredState() {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(raw);
-      this.state = {
-        ...createEmptyState(),
-        ...parsed,
-        leads: Array.isArray(parsed.leads) ? parsed.leads.map((lead) => this.migrateLead(lead, parsed.campaigns || [])) : [],
-        logEntries: Array.isArray(parsed.logEntries) ? parsed.logEntries.map(normalizeLogEntry) : [],
-        reminders: Array.isArray(parsed.reminders) ? parsed.reminders.map(normalizeReminder) : [],
-        campaigns: Array.isArray(parsed.campaigns) ? parsed.campaigns.map(normalizeCampaign) : [],
-        scheduleItems: Array.isArray(parsed.scheduleItems) ? parsed.scheduleItems.map(normalizeScheduleItem) : [],
-        callRecords: Array.isArray(parsed.callRecords) ? parsed.callRecords.map(normalizeCallRecord) : [],
-        settings: { ...createEmptyState().settings, ...(parsed.settings || {}) }
-      };
-      await this.save();
+      return await this.parseStoredState(raw, this.filePath);
     } catch (error) {
-      if (error.code !== "ENOENT") {
+      if (error.code === "ENOENT") {
+        return null;
+      }
+      if (!(error instanceof SyntaxError)) {
         throw error;
       }
-      await this.save();
+      await this.backupCorruptStore();
+    }
+
+    try {
+      const backupRaw = await fs.readFile(this.backupPath, "utf8");
+      return await this.parseStoredState(backupRaw, this.backupPath);
+    } catch {
+      throw new Error("Kunddatafilen kunde inte lasas och ingen giltig backup hittades.");
+    }
+  }
+
+  async parseStoredState(raw, sourcePath) {
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) {
+        throw error;
+      }
+      if (sourcePath === this.filePath) {
+        this.skipNextBackup = true;
+        await this.backupCorruptStore();
+      }
+      return JSON.parse(escapeControlCharactersInJsonStrings(raw));
+    }
+  }
+
+  async backupCorruptStore() {
+    const corruptPath = this.filePath.replace(/\.json$/, `.corrupt-${timestampForFileName()}.json`);
+    try {
+      await fs.copyFile(this.filePath, corruptPath);
+    } catch {
+      // Best effort only. Startup should continue to the regular fallback path.
     }
   }
 
@@ -113,7 +230,32 @@ class DataStore {
   }
 
   async save() {
-    await fs.writeFile(this.filePath, JSON.stringify(this.state, null, 2), "utf8");
+    const operation = this.saveQueue.then(() => this.writeStateToDisk());
+    this.saveQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  async writeStateToDisk() {
+    await fs.mkdir(this.baseDir, { recursive: true });
+    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
+    if (this.skipNextBackup) {
+      this.skipNextBackup = false;
+    } else {
+      try {
+        await fs.copyFile(this.filePath, this.backupPath);
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          throw error;
+        }
+      }
+    }
+    await fs.writeFile(tempPath, JSON.stringify(this.state, null, 2), "utf8");
+    try {
+      await fs.rename(tempPath, this.filePath);
+    } catch (error) {
+      await fs.rm(tempPath, { force: true });
+      throw error;
+    }
   }
 
   async saveSettings(patch) {
@@ -200,6 +342,7 @@ class DataStore {
     const result = {
       imported: 0,
       duplicates: 0,
+      alreadyInList: 0,
       skipped: 0,
       leadIds: []
     };
@@ -219,7 +362,11 @@ class DataStore {
       );
 
       if (creation.duplicate) {
-        result.duplicates += 1;
+        if (options.listId && creation.lead.listId === options.listId) {
+          result.alreadyInList += 1;
+        } else {
+          result.duplicates += 1;
+        }
         continue;
       }
 
@@ -661,6 +808,10 @@ class DataStore {
     }
     campaign.totalLeads = this.state.leads.filter((lead) => lead.listId === campaignId && !lead.isDeleted).length;
     campaign.estimatedDays = estimateDays(campaign.totalLeads, campaign.dailyTarget);
+  }
+
+  refreshAllCampaignCounters() {
+    this.state.campaigns.forEach((campaign) => this.refreshCampaignCounters(campaign.id));
   }
 }
 

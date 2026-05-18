@@ -364,13 +364,7 @@
                   <input id="placesMaxResultsInput" class="input" type="number" min="1" max="60" value="60" />
                 </label>
                 <label class="field">
-                  <span>Spara till lista</span>
-                  <select id="placesCampaignSelect" class="input">
-                    <option value="">Skapa ny lista</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span>Namn på ny lista</span>
+                  <span>Namn på lista</span>
                   <input id="campaignNameInput" class="input" type="text" placeholder="Byggare i Kalmar" />
                 </label>
               </div>
@@ -457,73 +451,76 @@
 
         <section id="adsView" class="view annonsstudio-view">
           <section class="panel annonsstudio-panel">
-            <div class="annonsstudio-topbar">
+            <div class="section-header annonsstudio-header">
               <div>
                 <p class="section-label">Annonsstudio</p>
-                <h3>AI-baserad annonsproduktion</h3>
-                <p class="muted-text">Klistra in kundmejl, ladda upp bilagor och skapa originalutkast i 16:9.</p>
+                <h3>16:9-annonsgenerator</h3>
               </div>
-              <div class="annonsstudio-actions">
-                <span class="annonsstudio-format-pill">16:9 / 1920 x 1080</span>
-                <button id="adsResetButton" class="ghost-button" type="button">Nollst&auml;ll</button>
-                <button id="adsExportButton" class="primary-button" type="button">Exportera PNG</button>
-              </div>
+              <div class="annonsstudio-format-pill">1920 x 1080</div>
             </div>
 
-            <div class="annonsstudio-status-row">
-              <div class="annonsstudio-status-card is-active">
-                <span>1</span>
-                <strong>Material</strong>
-                <small>Kundmejl, bilder och kontakt</small>
-              </div>
-              <div class="annonsstudio-status-card">
-                <span>2</span>
-                <strong>AI-brief</strong>
-                <small>Tolkning av underlag</small>
-              </div>
-              <div class="annonsstudio-status-card">
-                <span>3</span>
-                <strong>Annonsbild</strong>
-                <small>GPT Image 2</small>
-              </div>
-              <div class="annonsstudio-status-card">
-                <span>4</span>
-                <strong>Granskning</strong>
-                <small>Klar f&ouml;r kund</small>
-              </div>
-            </div>
-
-            <div class="annonsstudio-workspace annonsstudio-workspace-v2">
-              <aside class="annonsstudio-material-panel">
+            <div class="annonsstudio-workspace">
+              <div class="annonsstudio-form-stack">
                 <div class="annonsstudio-card">
                   <div class="annonsstudio-card-head">
                     <div>
-                      <p class="section-label">Material fr&aring;n kund</p>
-                      <h4>Instruktioner och bilagor</h4>
+                      <p class="section-label">Kundunderlag</p>
+                      <h4>Brief och material</h4>
                     </div>
                     <span id="adsQualityBadge" class="status-badge">V&auml;ntar</span>
                   </div>
 
-                  <label class="field">
-                    <span>Kund fr&aring;n Sales System</span>
-                    <select id="adsCustomerSelect" class="input">
-                      <option value="">Frist&aring;ende annons</option>
-                    </select>
-                  </label>
-
-                  <label class="field">
-                    <span>OpenAI API-nyckel</span>
-                    <input id="adsOpenAiKeyInput" class="input" type="password" placeholder="Sparas lokalt i appen" />
-                  </label>
-
                   <div class="form-grid annonsstudio-form-grid">
+                    <label class="field field-span">
+                      <span>Kund fr&aring;n Sales System</span>
+                      <select id="adsCustomerSelect" class="input">
+                        <option value="">Frist&aring;ende annons</option>
+                      </select>
+                    </label>
                     <label class="field">
-                      <span>F&ouml;retag</span>
-                      <input id="adsBrandInput" class="input" type="text" placeholder="Ex. Metabolic Balance Coach" />
+                      <span>F&ouml;retag / varum&auml;rke</span>
+                      <input id="adsBrandInput" class="input" type="text" placeholder="Ex. Forss IT" />
+                    </label>
+                    <label class="field">
+                      <span>Mall</span>
+                      <select id="adsTemplateSelect" class="input">
+                        <option value="service">Lokal tj&auml;nstefirma</option>
+                        <option value="premium">Premium / inredning</option>
+                        <option value="b2b">B2B / f&ouml;retag</option>
+                        <option value="campaign">Kampanj</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>Huvudbild</span>
+                      <input id="adsImageInput" class="input" type="file" accept="image/*" />
+                    </label>
+                    <label class="field">
+                      <span>Logga</span>
+                      <input id="adsLogoInput" class="input" type="file" accept="image/*" />
+                    </label>
+                    <label class="field">
+                      <span>Accentf&auml;rg</span>
+                      <input id="adsAccentInput" class="input" type="color" value="#f97316" />
+                    </label>
+                    <label class="field field-span">
+                      <span>Rubrik</span>
+                      <input id="adsHeadlineInput" class="input" type="text" placeholder="Ex. Kontakta din lokala takl&auml;ggare idag" />
+                    </label>
+                    <label class="field field-span">
+                      <span>Underrubrik</span>
+                      <input id="adsSubheadlineInput" class="input" type="text" placeholder="Ex. Vi kan tak" />
+                    </label>
+                    <label class="field field-span">
+                      <span>Extra underlag fr&aring;n kund</span>
+                      <textarea id="adsBodyInput" class="input" rows="4" placeholder="Kundens erbjudande, styrkor, ton, ort eller kampanjinfo"></textarea>
+                    </label>
+                    <label class="field">
+                      <span>Call to action</span>
+                      <input id="adsCtaInput" class="input" type="text" placeholder="Boka kostnadsfri r&aring;dgivning" />
                     </label>
                     <label class="field">
                       <span>Telefon</span>
-                      <input id="adsPhoneInput" class="input" type="text" placeholder="073-354 95 44" />
+                      <input id="adsPhoneInput" class="input" type="text" placeholder="011-400 00 20" />
                     </label>
                     <label class="field">
                       <span>E-post</span>
@@ -535,138 +532,42 @@
                     </label>
                   </div>
 
-                  <label class="field">
-                    <span>Klistra in kundmejl / instruktioner</span>
-                    <textarea id="adsInstructionsInput" class="input annonsstudio-instructions" rows="9" placeholder="Klistra in kundens mejl, önskemål, format, QR-info, ton, texter och annan information här."></textarea>
-                  </label>
-
-                  <div class="annonsstudio-source-block">
-                    <div class="annonsstudio-source-head">
-                      <div>
-                        <p class="section-label">AI-underlag</p>
-                        <strong>L&aring;t AI h&auml;mta f&ouml;retagsprofil</strong>
-                      </div>
-                      <button id="adsResearchButton" class="secondary-button" type="button">H&auml;mta fr&aring;n webben</button>
-                    </div>
-                    <label class="field">
-                      <span>Hemsida / Facebook / publika l&auml;nkar</span>
-                      <textarea id="adsResearchInput" class="input annonsstudio-source-links" rows="3" placeholder="Klistra in webbadress, Facebook-sida, Instagram-l&auml;nk eller andra publika sidor. En per rad."></textarea>
-                    </label>
-                    <div id="adsResearchPanel" class="annonsstudio-research-panel"></div>
-                  </div>
-
-                  <label class="field">
-                    <span>Din kreativa feedback / riktning</span>
-                    <textarea id="adsCreativeFeedbackInput" class="input annonsstudio-feedback-input" rows="4" placeholder="Ex. G&ouml;r den mer premium, mindre AI-k&auml;nsla, studentinriktat budskap, anv&auml;nd mer gr&ouml;nt, st&ouml;rre CTA."></textarea>
-                  </label>
-                  <div class="annonsstudio-feedback-actions">
-                    <button id="adsApplyFeedbackButton" class="secondary-button" type="button">Verkst&auml;ll feedback</button>
-                    <span id="adsFeedbackStatus">Ingen feedback verkst&auml;lld.</span>
-                  </div>
-
-                  <label class="annonsstudio-dropzone">
-                    <input id="adsFilesInput" type="file" accept="image/*" multiple />
-                    <strong>L&auml;gg till bilder fr&aring;n kunden</strong>
-                    <span>Dra in eller v&auml;lj flera JPG/PNG/WebP. AI:n tolkar bilderna tillsammans med texten.</span>
-                  </label>
-
-                  <div id="adsAssetGrid" class="annonsstudio-asset-grid"></div>
-
                   <div class="inline-actions">
-                    <button id="adsInterpretButton" class="primary-button" type="button">Tolka material med AI</button>
-                    <button id="adsGenerateImageButton" class="ghost-button" type="button">Generera komplett annonsbild</button>
+                    <button id="adsGenerateButton" class="primary-button" type="button">Generera f&ouml;rslag</button>
+                    <button id="adsExportButton" class="secondary-button" type="button">Exportera PNG</button>
+                    <button id="adsResetButton" class="ghost-button" type="button">Nollst&auml;ll</button>
                   </div>
-                  <p id="adsFeedback" class="feedback">Tolka materialet f&ouml;r att f&aring; riktningar. Generera sedan en komplett 16:9-annons med GPT Image 2.</p>
+                  <p id="adsFeedback" class="feedback">L&auml;gg in kundmaterial och skapa 16:9-f&ouml;rslag som bygger p&aring; riktiga bilder.</p>
                 </div>
 
                 <div class="annonsstudio-card">
                   <div class="annonsstudio-card-head">
                     <div>
-                      <p class="section-label">AI-brief</p>
-                      <h4>Tolkning</h4>
-                    </div>
-                    <div class="annonsstudio-brief-actions">
-                      <button id="adsCopyBriefButton" class="ghost-button" type="button">Kopiera</button>
-                      <button id="adsExportBriefButton" class="ghost-button" type="button">Exportera</button>
-                      <button id="adsRegenerateBriefButton" class="ghost-button" type="button">Regenerera</button>
+                      <p class="section-label">Varianter</p>
+                      <h4>V&auml;lj riktning</h4>
                     </div>
                   </div>
-                  <div id="adsBriefPanel" class="annonsstudio-brief-panel"></div>
+                  <div id="adsVariantList" class="annonsstudio-variants"></div>
                 </div>
-              </aside>
+              </div>
 
-              <main class="annonsstudio-draft-panel">
-                <div class="annonsstudio-card annonsstudio-preview-card">
-                  <div class="annonsstudio-preview-head">
-                    <div>
-                      <p class="section-label">Komplett annons</p>
-                      <h4 id="adsActiveConceptTitle">V&auml;lj riktning och generera</h4>
-                    </div>
-                    <div class="annonsstudio-preview-tools">
-                      <button id="adsSendReviewButton" class="secondary-button" type="button">Markera f&ouml;r granskning</button>
-                      <span>16:9</span>
-                    </div>
+              <div class="annonsstudio-preview-panel">
+                <div class="annonsstudio-preview-head">
+                  <div>
+                    <p class="section-label">Live-preview</p>
+                    <h4>Annons i 16:9</h4>
                   </div>
-                  <div class="annonsstudio-preview-shell annonsstudio-preview-shell-v2">
-                    <div id="adsPreview" class="ad-preview-v2"></div>
-                  </div>
-                  <div id="adsGenerationProgress" class="annonsstudio-generation-progress" hidden>
-                    <div class="annonsstudio-generation-progress__meta">
-                      <strong id="adsGenerationProgressLabel">F&ouml;rbereder bildgenerering...</strong>
-                      <span id="adsGenerationProgressValue">0%</span>
-                    </div>
-                    <div class="annonsstudio-generation-progress__track">
-                      <span id="adsGenerationProgressBar"></span>
-                    </div>
-                  </div>
-                  <div class="annonsstudio-checklist">
-                    <span>Originalriktning</span>
-                    <span>Riktiga kundbilder</span>
-                    <span>Text och kontakt kontrolleras</span>
-                  </div>
+                  <span>Riktig kundbild f&ouml;rst</span>
                 </div>
-
-                <div class="annonsstudio-card">
-                  <div class="annonsstudio-card-head">
-                    <div>
-                      <p class="section-label">AI-riktningar</p>
-                      <h4>V&auml;lj riktning f&ouml;r bildmodellen</h4>
-                    </div>
-                  </div>
-                  <div id="adsVariantList" class="annonsstudio-variants-v2"></div>
+                <div class="annonsstudio-preview-shell">
+                  <div id="adsPreview" class="ad-preview"></div>
                 </div>
-
-                <div class="annonsstudio-card">
-                  <div class="annonsstudio-card-head">
-                    <div>
-                      <p class="section-label">Styrning</p>
-                      <h4>Text och feedback till n&auml;sta generation</h4>
-                    </div>
-                  </div>
-                  <div class="form-grid annonsstudio-form-grid">
-                    <label class="field">
-                      <span>Rubrik</span>
-                      <input id="adsHeadlineInput" class="input" type="text" />
-                    </label>
-                    <label class="field">
-                      <span>Underrubrik</span>
-                      <input id="adsSubheadlineInput" class="input" type="text" />
-                    </label>
-                    <label class="field">
-                      <span>CTA</span>
-                      <input id="adsCtaInput" class="input" type="text" />
-                    </label>
-                    <label class="field">
-                      <span>Accentf&auml;rg</span>
-                      <input id="adsAccentInput" class="input" type="color" value="#f97316" />
-                    </label>
-                    <label class="field field-span">
-                      <span>Punkttexter / st&ouml;dtext</span>
-                      <textarea id="adsBodyInput" class="input" rows="4"></textarea>
-                    </label>
-                  </div>
+                <div class="annonsstudio-checklist">
+                  <span>16:9</span>
+                  <span>Textytor skyddade</span>
+                  <span>PNG-export</span>
                 </div>
-              </main>
+              </div>
             </div>
           </section>
         </section>

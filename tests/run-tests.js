@@ -1,6 +1,9 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
-const { buildMonthlyPlan, buildScheduleItems, findDuplicateLead, normalizeCampaign, normalizeLead } = require("../src/main/domain");
+const { buildMonthlyPlan, buildScheduleItems, findDuplicateLead, normalizeLead } = require("../src/main/domain");
 const { DataStore } = require("../src/main/data-store");
 const { buildSearchQueries } = require("../src/main/places-service");
 
@@ -66,40 +69,43 @@ async function run() {
   assert.equal(queueStore.getNextLead({ excludeLeadIds: ["lead-a"] }).id, "lead-b");
   assert.equal(queueStore.getNextLead({ excludeLeadIds: ["lead-a", "lead-b"] }).id, "lead-c");
 
-  const noteStore = new DataStore(__dirname);
-  noteStore.save = async () => {};
-  noteStore.state = {
-    ...noteStore.state,
-    leads: [normalizeLead({ id: "note-lead", companyName: "Note Lead", status: "Ny", notes: "" })]
-  };
-  await noteStore.applyLeadAction({ leadId: "note-lead", status: "Ny", contactName: "", note: " Ringde Madeleine " });
-  assert.equal(noteStore.state.leads[0].notes, "Ringde Madeleine");
-  await noteStore.applyLeadAction({ leadId: "note-lead", status: "Ny", contactName: "", note: "" });
-  assert.equal(noteStore.state.leads[0].notes, "");
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sales-system-store-"));
+  try {
+    const persistentStore = new DataStore(tempDir);
+    persistentStore.state = {
+      ...persistentStore.state,
+      leads: [normalizeLead({ id: "persisted-lead", companyName: "Persisted AB" })]
+    };
+    await persistentStore.save();
+    await persistentStore.save();
+    fs.writeFileSync(path.join(tempDir, "sales-system.json"), "{ broken", "utf8");
 
-  const campaignStore = new DataStore(__dirname);
-  campaignStore.save = async () => {};
-  campaignStore.state = {
-    ...campaignStore.state,
-    campaigns: [normalizeCampaign({ id: "campaign-a", name: "Bygg Kalmar" })],
-    leads: [
-      normalizeLead({ id: "campaign-lead-a", companyName: "List Lead A", listId: "campaign-a" }),
-      normalizeLead({ id: "campaign-lead-b", companyName: "List Lead B", listId: "campaign-a", isDeleted: true }),
-      normalizeLead({ id: "other-lead", companyName: "Other", listId: "campaign-b" })
-    ],
-    settings: { ...campaignStore.state.settings, lastSelectedCampaignId: "campaign-a" }
-  };
-  await campaignStore.deleteCampaign("campaign-a");
-  assert.equal(campaignStore.state.campaigns.length, 0);
-  assert.equal(campaignStore.state.leads.find((lead) => lead.id === "campaign-lead-a").listId, "");
-  assert.equal(campaignStore.state.leads.find((lead) => lead.id === "campaign-lead-b").listId, "");
-  assert.equal(campaignStore.state.leads.find((lead) => lead.id === "other-lead").listId, "campaign-b");
-  assert.equal(campaignStore.state.settings.lastSelectedCampaignId, "");
+    const recoveredStore = new DataStore(tempDir);
+    await recoveredStore.init();
+    assert.equal(recoveredStore.state.leads.length, 1);
+    assert.equal(recoveredStore.state.leads[0].id, "persisted-lead");
+
+    const campaign = await recoveredStore.createCampaign({ id: "target-list", name: "Target List" });
+    const firstImport = await recoveredStore.importLeads(
+      [normalizeLead({ externalId: "place-1", companyName: "Same AB", phone: "0701234567" })],
+      { listId: campaign.id }
+    );
+    const secondImport = await recoveredStore.importLeads(
+      [normalizeLead({ externalId: "place-1", companyName: "Same AB", phone: "0701234567" })],
+      { listId: campaign.id }
+    );
+    assert.equal(firstImport.imported, 1);
+    assert.equal(secondImport.imported, 0);
+    assert.equal(secondImport.alreadyInList, 1);
+    assert.equal(recoveredStore.state.leads.filter((lead) => lead.listId === campaign.id).length, 1);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 
   console.log("All tests passed.");
 }
 
 run().catch((error) => {
   console.error(error);
-  process.exitCode = 1;
+  process.exit(1);
 });

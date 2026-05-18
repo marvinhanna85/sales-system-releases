@@ -8,6 +8,8 @@ const LEAD_STATUSES = [
   "Closed",
   "Inte intresserad"
 ];
+const DASHBOARD_UPCOMING_WINDOW_MINUTES = 60;
+const DASHBOARD_UPCOMING_LIMIT = 3;
 
 const BRANCH_QUERY_TEMPLATES = {
   byggare: ["byggfirma {city}", "byggföretag {city}", "snickare {city}", "entreprenad {city}", "renovering {city}", "byggservice {city}"],
@@ -42,6 +44,23 @@ const state = {
     settings: {}
   },
   currentView: "dashboard",
+  adStudio: {
+    selectedLeadId: "",
+    activeConceptId: "",
+    assets: [],
+    brief: null,
+    concepts: [],
+    research: null,
+    appliedCreativeFeedback: "",
+    imageProgress: {
+      active: false,
+      value: 0,
+      label: ""
+    },
+    status: "material",
+    fields: createDefaultAdStudioFields(),
+    isBusy: false
+  },
   lastRenderedView: "",
   suppressViewHistory: false,
   viewHistory: [],
@@ -61,6 +80,8 @@ const state = {
   placesResults: [],
   placesMeta: null,
   placesSelection: {},
+  placesSearchBusy: false,
+  placesSaveBusy: false,
   reminderViewMode: "all",
   selectedReminderDate: "",
   dashboardTodayExpanded: false,
@@ -100,10 +121,13 @@ const state = {
     },
     uiZoom: getStoredUiZoom(),
     previousLeadIds: [],
-    workDraft: createEmptyWorkDraft()
-  };
+    workDraft: createEmptyWorkDraft(),
+    invoiceLines: [createDefaultInvoiceLine()]
+};
 
 let customerFilterRenderTimer = null;
+let adStudioImageProgressTimer = null;
+const adStudioAssetDataUrlCache = new Map();
 
 const elements = {
   navButtons: [...document.querySelectorAll(".nav-button")],
@@ -112,8 +136,10 @@ const elements = {
     work: document.querySelector("#workView"),
     customers: document.querySelector("#customersView"),
     campaigns: document.querySelector("#campaignsView"),
+    ads: document.querySelector("#adsView"),
     planning: document.querySelector("#planningView"),
     reminders: document.querySelector("#remindersView"),
+    invoices: document.querySelector("#invoicesView"),
     export: document.querySelector("#exportView")
   },
   topbarTitle: document.querySelector("#topbarTitle"),
@@ -134,6 +160,10 @@ const elements = {
   dashboardWeatherMeta: document.querySelector("#dashboardWeatherMeta"),
   dashboardTodaySummary: document.querySelector("#dashboardTodaySummary"),
   dashboardWeekOverview: document.querySelector("#dashboardWeekOverview"),
+  dashboardUpcomingPanel: document.querySelector("#dashboardUpcomingPanel"),
+  dashboardUpcomingTitle: document.querySelector("#dashboardUpcomingTitle"),
+  dashboardUpcomingList: document.querySelector("#dashboardUpcomingList"),
+  dashboardUpcomingAllButton: document.querySelector("#dashboardUpcomingAllButton"),
   dashboardTodayList: document.querySelector("#dashboardTodayList"),
   dashboardTodayToggle: document.querySelector("#dashboardTodayToggle"),
   dashboardActivityRangeButtons: document.querySelector("#dashboardActivityRangeButtons"),
@@ -213,6 +243,7 @@ const elements = {
   placesIndustryInput: document.querySelector("#placesIndustryInput"),
   placesCityInput: document.querySelector("#placesCityInput"),
   placesMaxResultsInput: document.querySelector("#placesMaxResultsInput"),
+  placesCampaignSelect: document.querySelector("#placesCampaignSelect"),
   campaignNameInput: document.querySelector("#campaignNameInput"),
   searchPlacesButton: document.querySelector("#searchPlacesButton"),
   selectAllPlacesButton: document.querySelector("#selectAllPlacesButton"),
@@ -237,6 +268,45 @@ const elements = {
   campaignBulkDeleteButton: document.querySelector("#campaignBulkDeleteButton"),
   campaignsCatalogList: document.querySelector("#campaignsCatalogList"),
   campaignCards: document.querySelector("#campaignCards"),
+  adsCustomerSelect: document.querySelector("#adsCustomerSelect"),
+  adsOpenAiKeyInput: document.querySelector("#adsOpenAiKeyInput"),
+  adsBrandInput: document.querySelector("#adsBrandInput"),
+  adsHeadlineInput: document.querySelector("#adsHeadlineInput"),
+  adsSubheadlineInput: document.querySelector("#adsSubheadlineInput"),
+  adsBodyInput: document.querySelector("#adsBodyInput"),
+  adsCtaInput: document.querySelector("#adsCtaInput"),
+  adsPhoneInput: document.querySelector("#adsPhoneInput"),
+  adsEmailInput: document.querySelector("#adsEmailInput"),
+  adsWebsiteInput: document.querySelector("#adsWebsiteInput"),
+  adsAccentInput: document.querySelector("#adsAccentInput"),
+  adsInstructionsInput: document.querySelector("#adsInstructionsInput"),
+  adsResearchInput: document.querySelector("#adsResearchInput"),
+  adsResearchButton: document.querySelector("#adsResearchButton"),
+  adsResearchPanel: document.querySelector("#adsResearchPanel"),
+  adsCreativeFeedbackInput: document.querySelector("#adsCreativeFeedbackInput"),
+  adsApplyFeedbackButton: document.querySelector("#adsApplyFeedbackButton"),
+  adsFeedbackStatus: document.querySelector("#adsFeedbackStatus"),
+  adsFilesInput: document.querySelector("#adsFilesInput"),
+  adsAssetGrid: document.querySelector("#adsAssetGrid"),
+  adsInterpretButton: document.querySelector("#adsInterpretButton"),
+  adsGenerateButton: document.querySelector("#adsGenerateButton"),
+  adsGenerateImageButton: document.querySelector("#adsGenerateImageButton"),
+  adsRegenerateBriefButton: document.querySelector("#adsRegenerateBriefButton"),
+  adsCopyBriefButton: document.querySelector("#adsCopyBriefButton"),
+  adsExportBriefButton: document.querySelector("#adsExportBriefButton"),
+  adsExportButton: document.querySelector("#adsExportButton"),
+  adsResetButton: document.querySelector("#adsResetButton"),
+  adsSendReviewButton: document.querySelector("#adsSendReviewButton"),
+  adsActiveConceptTitle: document.querySelector("#adsActiveConceptTitle"),
+  adsFeedback: document.querySelector("#adsFeedback"),
+  adsQualityBadge: document.querySelector("#adsQualityBadge"),
+  adsPreview: document.querySelector("#adsPreview"),
+  adsGenerationProgress: document.querySelector("#adsGenerationProgress"),
+  adsGenerationProgressLabel: document.querySelector("#adsGenerationProgressLabel"),
+  adsGenerationProgressValue: document.querySelector("#adsGenerationProgressValue"),
+  adsGenerationProgressBar: document.querySelector("#adsGenerationProgressBar"),
+  adsVariantList: document.querySelector("#adsVariantList"),
+  adsBriefPanel: document.querySelector("#adsBriefPanel"),
   planningCampaignSelect: document.querySelector("#planningCampaignSelect"),
   planningMonthInput: document.querySelector("#planningMonthInput"),
   planningDailyTargetInput: document.querySelector("#planningDailyTargetInput"),
@@ -248,6 +318,29 @@ const elements = {
   planningCalendar: document.querySelector("#planningCalendar"),
   planningSummary: document.querySelector("#planningSummary"),
   remindersList: document.querySelector("#remindersList"),
+  invoiceLeadSelect: document.querySelector("#invoiceLeadSelect"),
+  invoiceNumberInput: document.querySelector("#invoiceNumberInput"),
+  invoiceCustomerNameInput: document.querySelector("#invoiceCustomerNameInput"),
+  invoiceCustomerOrgInput: document.querySelector("#invoiceCustomerOrgInput"),
+  invoiceCustomerAddressInput: document.querySelector("#invoiceCustomerAddressInput"),
+  invoiceCustomerEmailInput: document.querySelector("#invoiceCustomerEmailInput"),
+  invoiceCustomerReferenceInput: document.querySelector("#invoiceCustomerReferenceInput"),
+  invoiceCustomerReferencePhoneInput: document.querySelector("#invoiceCustomerReferencePhoneInput"),
+  invoiceOrderDateInput: document.querySelector("#invoiceOrderDateInput"),
+  invoiceDueDateInput: document.querySelector("#invoiceDueDateInput"),
+  invoiceReferenceNameInput: document.querySelector("#invoiceReferenceNameInput"),
+  invoiceReferencePhoneInput: document.querySelector("#invoiceReferencePhoneInput"),
+  invoiceReferenceEmailInput: document.querySelector("#invoiceReferenceEmailInput"),
+  invoiceLinesList: document.querySelector("#invoiceLinesList"),
+  addInvoiceLineButton: document.querySelector("#addInvoiceLineButton"),
+  invoiceVatRateInput: document.querySelector("#invoiceVatRateInput"),
+  invoiceSummary: document.querySelector("#invoiceSummary"),
+  invoiceBankNameInput: document.querySelector("#invoiceBankNameInput"),
+  invoiceBankgiroInput: document.querySelector("#invoiceBankgiroInput"),
+  invoiceAccountNumberInput: document.querySelector("#invoiceAccountNumberInput"),
+  invoiceAccountOwnerInput: document.querySelector("#invoiceAccountOwnerInput"),
+  createInvoicePdfButton: document.querySelector("#createInvoicePdfButton"),
+  invoiceFeedback: document.querySelector("#invoiceFeedback"),
   exportScheduleCsvButton: document.querySelector("#exportScheduleCsvButton"),
   exportScheduleIcsButton: document.querySelector("#exportScheduleIcsButton"),
   exportLeadsCsvButton: document.querySelector("#exportLeadsCsvButton"),
@@ -310,9 +403,9 @@ async function init() {
 
 function bindEvents() {
   elements.navButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      state.currentView = button.dataset.view;
-      render();
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openNavView(button.dataset.view);
     });
   });
   document.addEventListener("click", (event) => {
@@ -320,18 +413,14 @@ function bindEvents() {
     if (!navButton) {
       return;
     }
-    state.currentView = navButton.dataset.view;
-    render();
+    openNavView(navButton.dataset.view);
   });
 
   elements.topbarNextLead.addEventListener("click", () => openNextLead(true));
   elements.dashboardNextLead.addEventListener("click", () => openNextLead(true));
-  elements.dashboardOpenReminders.addEventListener("click", () => {
-    state.currentView = "reminders";
-    state.reminderViewMode = "due";
-    state.selectedReminderDate = "";
-    render();
-  });
+  elements.dashboardOpenReminders.addEventListener("click", openDueReminders);
+  elements.dashboardUpcomingAllButton?.addEventListener("click", openDueReminders);
+  elements.dashboardUpcomingList?.addEventListener("click", handleDashboardUpcomingClick);
   elements.topbarBackButton?.addEventListener("click", goBack);
   elements.dashboardTodayToggle?.addEventListener("click", () => {
     state.dashboardTodayExpanded = !state.dashboardTodayExpanded;
@@ -548,7 +637,43 @@ function bindEvents() {
   });
   elements.campaignBulkDeleteButton.addEventListener("click", bulkDeleteSelectedCampaigns);
 
+  elements.adsCustomerSelect?.addEventListener("change", handleAdStudioCustomerChange);
+  [
+    ["brand", elements.adsBrandInput],
+    ["headline", elements.adsHeadlineInput],
+    ["subheadline", elements.adsSubheadlineInput],
+    ["body", elements.adsBodyInput],
+    ["cta", elements.adsCtaInput],
+    ["phone", elements.adsPhoneInput],
+    ["email", elements.adsEmailInput],
+    ["website", elements.adsWebsiteInput],
+    ["accent", elements.adsAccentInput],
+    ["instructions", elements.adsInstructionsInput],
+    ["researchUrls", elements.adsResearchInput],
+    ["creativeFeedback", elements.adsCreativeFeedbackInput]
+  ].forEach(([field, element]) => {
+    element?.addEventListener("input", (event) => updateAdStudioField(field, event.target.value));
+  });
+  elements.adsOpenAiKeyInput?.addEventListener("input", (event) => {
+    state.data.settings.openaiApiKey = event.target.value.trim();
+  });
+  elements.adsFilesInput?.addEventListener("change", handleAdStudioFilesInput);
+  elements.adsAssetGrid?.addEventListener("click", handleAdStudioAssetClick);
+  elements.adsResearchButton?.addEventListener("click", () => researchAdStudioCustomer());
+  elements.adsApplyFeedbackButton?.addEventListener("click", () => applyAdStudioFeedback());
+  elements.adsInterpretButton?.addEventListener("click", () => generateAdStudioBrief());
+  elements.adsRegenerateBriefButton?.addEventListener("click", () => generateAdStudioBrief({ force: true }));
+  elements.adsCopyBriefButton?.addEventListener("click", copyAdStudioBrief);
+  elements.adsExportBriefButton?.addEventListener("click", exportAdStudioBrief);
+  elements.adsGenerateButton?.addEventListener("click", () => generateAdStudioConcepts());
+  elements.adsGenerateImageButton?.addEventListener("click", generateAdStudioImageAsset);
+  elements.adsExportButton?.addEventListener("click", exportAdStudioPng);
+  elements.adsResetButton?.addEventListener("click", resetAdStudio);
+  elements.adsVariantList?.addEventListener("click", handleAdVariantClick);
+  elements.adsSendReviewButton?.addEventListener("click", markAdStudioForReview);
+
   elements.searchPlacesButton.addEventListener("click", searchPlacesAction);
+  elements.placesCampaignSelect?.addEventListener("change", renderCampaigns);
   elements.selectAllPlacesButton.addEventListener("click", () => {
     state.placesSelection = Object.fromEntries(state.placesResults.map((lead) => [lead.id, true]));
     renderCampaigns();
@@ -572,6 +697,16 @@ function bindEvents() {
   elements.exportScheduleCsvButton.addEventListener("click", exportScheduleCsv);
   elements.exportScheduleIcsButton.addEventListener("click", exportScheduleIcs);
   elements.exportLeadsCsvButton.addEventListener("click", exportLeadsCsv);
+  elements.invoiceLeadSelect?.addEventListener("change", () => hydrateInvoiceCustomerFromLead(elements.invoiceLeadSelect.value));
+  elements.addInvoiceLineButton?.addEventListener("click", () => {
+    state.invoiceLines.push(createDefaultInvoiceLine());
+    renderInvoiceLines();
+    renderInvoiceSummary();
+  });
+  elements.invoiceLinesList?.addEventListener("input", handleInvoiceLineInput);
+  elements.invoiceLinesList?.addEventListener("click", handleInvoiceLineClick);
+  elements.invoiceVatRateInput?.addEventListener("input", renderInvoiceSummary);
+  elements.createInvoicePdfButton?.addEventListener("click", createInvoicePdfAction);
 
   elements.closeProfileModalButton.addEventListener("click", closeProfileModal);
   elements.profileModal.addEventListener("click", (event) => {
@@ -602,6 +737,19 @@ function bindEvents() {
   elements.saveEditLeadButton?.addEventListener("click", saveEditLeadAction);
 }
 
+function openNavView(view) {
+  state.currentView = view;
+  if (view === "customers") {
+    state.filters.customerSearch = "";
+    state.filters.customerStatus = "";
+    state.filters.customerCategory = "";
+    state.filters.customerCity = "";
+    state.filters.customerCampaignId = "";
+    clearCustomerSelection();
+  }
+  render();
+}
+
 async function refreshState() {
   state.data = await window.desktopApp.getState();
   if (state.workMode === "flow" && !findLead(state.selectedLeadId)) {
@@ -620,6 +768,7 @@ function hydrateSettings() {
   elements.telavoxFromDateInput.value = state.data.settings.telavoxFromDate ?? formatLocalDate(daysAgo(30));
   elements.planningDailyTargetInput.value = String(state.data.settings.dailyTarget ?? 40);
   elements.planningMonthInput.value = state.data.settings.lastPlannedMonth ?? currentMonthKey();
+  hydrateInvoiceDefaults();
 }
 
 function getStoredUiZoom() {
@@ -675,14 +824,15 @@ function renderUpdateControl() {
 
 function render() {
   try {
+    const activeView = state.currentView;
     trackViewHistory();
-    document.body.dataset.view = state.currentView;
-    document.body.classList.toggle("is-work-view", state.currentView === "work");
+    document.body.dataset.view = activeView;
+    document.body.classList.toggle("is-work-view", activeView === "work");
     elements.navButtons.forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.view === state.currentView);
+      button.classList.toggle("is-active", button.dataset.view === activeView);
     });
     Object.entries(elements.views).forEach(([key, view]) => {
-      view.classList.toggle("is-active", key === state.currentView);
+      view.classList.toggle("is-active", key === activeView);
     });
 
     elements.topbarTitle.textContent = {
@@ -690,24 +840,37 @@ function render() {
       work: "Arbetsläge",
       customers: "Kunder",
       campaigns: "Listor / kampanjer",
+      ads: "Annonsstudio",
       planning: "Planering",
       reminders: "Påminnelser",
+      invoices: "Fakturor",
       export: "Export"
-    }[state.currentView];
+    }[activeView];
     if (elements.topbarBackButton) {
       elements.topbarBackButton.hidden = state.viewHistory.length === 0;
     }
     renderUpdateControl();
 
     safeRenderSection("selectors", renderSelectors);
-    safeRenderSection("dashboard", renderDashboard);
-    safeRenderSection("work", renderWorkMode);
-    safeRenderSection("customers", renderCustomers);
-    safeRenderSection("campaigns", renderCampaigns);
-    safeRenderSection("planning", renderPlanning);
-    safeRenderSection("reminders", renderReminders);
-    safeRenderSection("export", renderExport);
-    safeRenderSection("profile", renderProfile);
+    if (activeView !== "ads") {
+      deactivateAdStudioDom();
+    }
+    const activeRenderers = {
+      dashboard: renderDashboard,
+      work: renderWorkMode,
+      customers: renderCustomers,
+      campaigns: renderCampaigns,
+      ads: renderAdStudio,
+      planning: renderPlanning,
+      reminders: renderReminders,
+      invoices: renderInvoices,
+      export: renderExport,
+      profile: renderProfile
+    };
+    const activeRenderer = activeRenderers[activeView];
+    if (activeRenderer) {
+      safeRenderSection(activeView, activeRenderer);
+    }
   } catch (error) {
     reportRuntimeError("Render-fel", error);
   }
@@ -783,11 +946,15 @@ function goBack() {
 function renderSelectors() {
   const campaignSelects = [
     { element: elements.workCampaignFilter, label: "Alla listor" },
+    { element: elements.placesCampaignSelect, label: "Skapa ny lista" },
     { element: elements.csvCampaignSelect, label: "Ingen lista" },
     { element: elements.planningCampaignSelect, label: "Alla öppna leads" }
   ];
 
   campaignSelects.forEach(({ element, label }) => {
+    if (!element) {
+      return;
+    }
     const currentValue = element.value;
     element.innerHTML = `<option value="">${label}</option>`;
     state.data.campaigns.forEach((campaign) => {
@@ -810,6 +977,7 @@ function renderSelectors() {
   ).join("")}`;
   renderManualBranchSuggestions();
   renderManualCampaignOptions();
+  renderInvoiceLeadOptions();
 }
 
 function renderDashboard() {
@@ -859,8 +1027,128 @@ function renderDashboard() {
   }
   renderDashboardTodayHero();
   renderDashboardWeekOverview();
+  renderDashboardUpcomingReminders();
   renderRecentActivity();
   void loadDashboardWeather();
+}
+
+function openDueReminders() {
+  state.currentView = "reminders";
+  state.reminderViewMode = "due";
+  state.selectedReminderDate = "";
+  render();
+}
+
+async function handleDashboardUpcomingClick(event) {
+  const openButton = event.target.closest("[data-dashboard-upcoming-open]");
+  if (openButton) {
+    selectLead(openButton.dataset.dashboardUpcomingOpen, "work");
+    return;
+  }
+
+  const doneButton = event.target.closest("[data-dashboard-upcoming-done]");
+  if (!doneButton) {
+    return;
+  }
+  await window.desktopApp.completeReminder({ reminderId: doneButton.dataset.dashboardUpcomingDone, completed: true });
+  await refreshState();
+  render();
+}
+
+function renderDashboardUpcomingReminders() {
+  if (!elements.dashboardUpcomingPanel || !elements.dashboardUpcomingList) {
+    return;
+  }
+  const reminders = getDashboardUpcomingReminders();
+  elements.dashboardUpcomingPanel.hidden = reminders.length === 0;
+  if (!reminders.length) {
+    elements.dashboardUpcomingList.innerHTML = "";
+    return;
+  }
+
+  const visibleReminders = reminders.slice(0, DASHBOARD_UPCOMING_LIMIT);
+  const remainingCount = reminders.length - visibleReminders.length;
+  if (elements.dashboardUpcomingTitle) {
+    elements.dashboardUpcomingTitle.textContent = remainingCount > 0
+      ? `Kommande p\u00e5minnelser (${reminders.length})`
+      : "Kommande p\u00e5minnelser";
+  }
+  elements.dashboardUpcomingList.innerHTML = visibleReminders.map(({ reminder, lead, dueAt, tone }) => {
+    const note = (reminder.note || getLeadLogs(lead.id)[0]?.text || "").slice(0, 92);
+    return `
+      <div class="dashboard-upcoming-item">
+        <span class="dashboard-upcoming-time is-${tone}">${escapeHtml(formatDashboardUpcomingTime(dueAt))}</span>
+        <span class="status-badge" data-status="${escapeHtml(lead.status || "Ny")}">${escapeHtml(lead.status || "Ny")}</span>
+        <button class="dashboard-upcoming-main" type="button" data-dashboard-upcoming-open="${escapeHtml(lead.id)}">
+          <strong>${escapeHtml(lead.companyName || "Ok\u00e4nd kund")}</strong>
+          <span>${escapeHtml(note || `${reminder.type || "P\u00e5minnelse"} ${formatReminderLabel(reminder)}`)}</span>
+        </button>
+        <button class="secondary-button" type="button" data-dashboard-upcoming-open="${escapeHtml(lead.id)}">\u00d6ppna</button>
+        <button class="ghost-button" type="button" data-dashboard-upcoming-done="${escapeHtml(reminder.id)}">Klar</button>
+      </div>
+    `;
+  }).join("") + (remainingCount > 0 ? `<button class="dashboard-upcoming-more" type="button" data-dashboard-upcoming-more>${remainingCount}+ fler</button>` : "");
+  elements.dashboardUpcomingList.querySelector("[data-dashboard-upcoming-more]")?.addEventListener("click", openDueReminders);
+}
+
+function getDashboardUpcomingReminders() {
+  const now = new Date();
+  const today = formatLocalDate(now);
+  const windowEnd = new Date(now.getTime() + DASHBOARD_UPCOMING_WINDOW_MINUTES * 60 * 1000);
+  return state.data.reminders
+    .map((reminder) => {
+      const lead = findLead(reminder.leadId);
+      const dueAt = getReminderDueDateTime(reminder);
+      return { reminder, lead, dueAt };
+    })
+    .filter(({ reminder, lead, dueAt }) => {
+      if (!lead || lead.isDeleted || reminder.completed || !reminder.dueDate || !dueAt) {
+        return false;
+      }
+      if (reminder.dueDate !== today) {
+        return false;
+      }
+      return dueAt <= windowEnd;
+    })
+    .sort((left, right) => left.dueAt - right.dueAt)
+    .map((item) => ({
+      ...item,
+      tone: getDashboardUpcomingTone(item.dueAt, now)
+    }));
+}
+
+function getReminderDueDateTime(reminder) {
+  if (!reminder?.dueDate) {
+    return null;
+  }
+  const time = /^\d{2}:\d{2}$/.test(reminder.dueTime || "") ? reminder.dueTime : "23:59";
+  const date = new Date(`${reminder.dueDate}T${time}:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getDashboardUpcomingTone(dueAt, now = new Date()) {
+  const minutes = Math.ceil((dueAt.getTime() - now.getTime()) / 60000);
+  if (minutes < 0) {
+    return "overdue";
+  }
+  if (minutes <= 5) {
+    return "now";
+  }
+  return "soon";
+}
+
+function formatDashboardUpcomingTime(dueAt, now = new Date()) {
+  const minutes = Math.ceil((dueAt.getTime() - now.getTime()) / 60000);
+  if (minutes < 0) {
+    return "F\u00d6RSENAD";
+  }
+  if (minutes <= 1) {
+    return "NU";
+  }
+  if (minutes <= DASHBOARD_UPCOMING_WINDOW_MINUTES) {
+    return `OM ${minutes} MIN`;
+  }
+  return `KL ${String(dueAt.getHours()).padStart(2, "0")}:${String(dueAt.getMinutes()).padStart(2, "0")}`;
 }
 
 function renderRecentActivity() {
@@ -1541,6 +1829,233 @@ function createPlannedDayCard(item) {
   });
 }
 
+function renderInvoices() {
+  renderInvoiceLines();
+  renderInvoiceSummary();
+}
+
+function renderInvoiceLeadOptions() {
+  if (!elements.invoiceLeadSelect) {
+    return;
+  }
+  const currentValue = elements.invoiceLeadSelect.value;
+  elements.invoiceLeadSelect.innerHTML = `<option value="">Välj kund</option>`;
+  state.data.leads
+    .filter((lead) => !lead.isDeleted)
+    .sort((left, right) => (left.companyName || "").localeCompare(right.companyName || "", "sv"))
+    .forEach((lead) => {
+      const option = document.createElement("option");
+      option.value = lead.id;
+      option.textContent = [lead.companyName, lead.targetMarketCity || lead.normalizedCity || lead.city].filter(Boolean).join(" - ");
+      elements.invoiceLeadSelect.appendChild(option);
+    });
+  if ([...elements.invoiceLeadSelect.options].some((option) => option.value === currentValue)) {
+    elements.invoiceLeadSelect.value = currentValue;
+  }
+}
+
+function hydrateInvoiceDefaults() {
+  if (!elements.invoiceNumberInput) {
+    return;
+  }
+  if (!elements.invoiceNumberInput.value) {
+    elements.invoiceNumberInput.value = String(Date.now()).slice(-6);
+  }
+  if (!elements.invoiceOrderDateInput.value) {
+    elements.invoiceOrderDateInput.value = formatLocalDate(new Date());
+  }
+  if (!elements.invoiceDueDateInput.value) {
+    elements.invoiceDueDateInput.value = formatLocalDate(daysFromNow(60));
+  }
+  if (!elements.invoiceReferenceNameInput.value) {
+    elements.invoiceReferenceNameInput.value = "Marvin Hanna";
+  }
+  if (!elements.invoiceReferencePhoneInput.value) {
+    elements.invoiceReferencePhoneInput.value = "010-146-33 70";
+  }
+  if (!elements.invoiceReferenceEmailInput.value) {
+    elements.invoiceReferenceEmailInput.value = "marvin@nordmediapartner.se";
+  }
+  if (!elements.invoiceVatRateInput.value) {
+    elements.invoiceVatRateInput.value = "25";
+  }
+  if (!elements.invoiceBankNameInput.value) {
+    elements.invoiceBankNameInput.value = "Swedbank";
+  }
+  if (!elements.invoiceBankgiroInput.value) {
+    elements.invoiceBankgiroInput.value = "5821-0170";
+  }
+  if (!elements.invoiceAccountNumberInput.value) {
+    elements.invoiceAccountNumberInput.value = "8270-1 4 865 317 4";
+  }
+  if (!elements.invoiceAccountOwnerInput.value) {
+    elements.invoiceAccountOwnerInput.value = "Nord Mediapartner AB";
+  }
+}
+
+function hydrateInvoiceCustomerFromLead(leadId) {
+  const lead = findLead(leadId);
+  if (!lead) {
+    return;
+  }
+  elements.invoiceCustomerNameInput.value = lead.companyName || "";
+  elements.invoiceCustomerAddressInput.value = lead.address || "";
+  elements.invoiceCustomerReferenceInput.value = lead.contactName || "";
+  elements.invoiceCustomerReferencePhoneInput.value = lead.phone || "";
+  elements.invoiceFeedback.textContent = "";
+}
+
+function createDefaultInvoiceLine() {
+  return {
+    description: "Exponering Skärmar",
+    name: "Sporthuset",
+    period: `${formatLocalDate(new Date())} - ${formatLocalDate(daysFromNow(365))}`,
+    quantity: "10 sekunder",
+    amount: "3000"
+  };
+}
+
+function handleInvoiceLineInput(event) {
+  const field = event.target?.dataset?.invoiceField;
+  const index = Number(event.target?.dataset?.invoiceIndex);
+  if (!field || !Number.isInteger(index) || !state.invoiceLines[index]) {
+    return;
+  }
+  state.invoiceLines[index][field] = event.target.value;
+  renderInvoiceSummary();
+}
+
+function handleInvoiceLineClick(event) {
+  const removeButton = event.target.closest("[data-remove-invoice-line]");
+  if (!removeButton) {
+    return;
+  }
+  const index = Number(removeButton.dataset.removeInvoiceLine);
+  if (!Number.isInteger(index) || state.invoiceLines.length <= 1) {
+    return;
+  }
+  state.invoiceLines.splice(index, 1);
+  renderInvoiceLines();
+  renderInvoiceSummary();
+}
+
+function renderInvoiceLines() {
+  if (!elements.invoiceLinesList) {
+    return;
+  }
+  elements.invoiceLinesList.innerHTML = "";
+  state.invoiceLines.forEach((line, index) => {
+    const row = document.createElement("div");
+    row.className = "invoice-line-row";
+    row.innerHTML = `
+      <label class="field">
+        <span>Beskrivning</span>
+        <input class="input" type="text" data-invoice-index="${index}" data-invoice-field="description" value="${escapeHtml(line.description)}" />
+      </label>
+      <label class="field">
+        <span>Benämning</span>
+        <input class="input" type="text" data-invoice-index="${index}" data-invoice-field="name" value="${escapeHtml(line.name)}" />
+      </label>
+      <label class="field">
+        <span>Period</span>
+        <input class="input" type="text" data-invoice-index="${index}" data-invoice-field="period" value="${escapeHtml(line.period)}" />
+      </label>
+      <label class="field">
+        <span>Längd</span>
+        <input class="input" type="text" data-invoice-index="${index}" data-invoice-field="quantity" value="${escapeHtml(line.quantity)}" />
+      </label>
+      <label class="field">
+        <span>Belopp</span>
+        <input class="input" type="number" min="0" step="1" data-invoice-index="${index}" data-invoice-field="amount" value="${escapeHtml(line.amount)}" />
+      </label>
+      <button class="ghost-button invoice-remove-line" type="button" data-remove-invoice-line="${index}" ${state.invoiceLines.length <= 1 ? "disabled" : ""}>Ta bort</button>
+    `;
+    elements.invoiceLinesList.appendChild(row);
+  });
+}
+
+function getInvoiceTotals() {
+  const subtotal = state.invoiceLines.reduce((sum, line) => sum + parseInvoiceAmount(line.amount), 0);
+  const vatRate = Math.max(0, Number(elements.invoiceVatRateInput?.value) || 0);
+  const vat = subtotal * (vatRate / 100);
+  return {
+    subtotal,
+    vatRate,
+    vat,
+    total: subtotal + vat
+  };
+}
+
+function parseInvoiceAmount(value) {
+  const amount = Number(String(value || "").replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function formatSek(value) {
+  return new Intl.NumberFormat("sv-SE", {
+    style: "currency",
+    currency: "SEK",
+    minimumFractionDigits: 2
+  }).format(Number(value) || 0);
+}
+
+function renderInvoiceSummary() {
+  if (!elements.invoiceSummary) {
+    return;
+  }
+  const totals = getInvoiceTotals();
+  elements.invoiceSummary.innerHTML = `
+    <div><span>Belopp exkl. moms</span><strong>${formatSek(totals.subtotal)}</strong></div>
+    <div><span>Moms ${totals.vatRate}%</span><strong>${formatSek(totals.vat)}</strong></div>
+    <div class="invoice-summary-total"><span>Totalt</span><strong>${formatSek(totals.total)}</strong></div>
+  `;
+}
+
+function collectInvoicePayload() {
+  return {
+    invoiceNumber: elements.invoiceNumberInput.value.trim(),
+    customerName: elements.invoiceCustomerNameInput.value.trim(),
+    customerOrgNumber: elements.invoiceCustomerOrgInput.value.trim(),
+    customerAddress: elements.invoiceCustomerAddressInput.value.trim(),
+    customerEmail: elements.invoiceCustomerEmailInput.value.trim(),
+    customerReference: elements.invoiceCustomerReferenceInput.value.trim(),
+    customerReferencePhone: elements.invoiceCustomerReferencePhoneInput.value.trim(),
+    orderDate: elements.invoiceOrderDateInput.value,
+    dueDate: elements.invoiceDueDateInput.value,
+    referenceName: elements.invoiceReferenceNameInput.value.trim(),
+    referencePhone: elements.invoiceReferencePhoneInput.value.trim(),
+    referenceEmail: elements.invoiceReferenceEmailInput.value.trim(),
+    vatRate: Number(elements.invoiceVatRateInput.value) || 0,
+    lines: state.invoiceLines.map((line) => ({ ...line })),
+    bankName: elements.invoiceBankNameInput.value.trim(),
+    bankgiro: elements.invoiceBankgiroInput.value.trim(),
+    accountNumber: elements.invoiceAccountNumberInput.value.trim(),
+    accountOwner: elements.invoiceAccountOwnerInput.value.trim(),
+    companyOrgNumber: "559365-4709",
+    companyVatNumber: "SE559365470901",
+    companyAddress: "Solbackavägen 9F, 632 22, Eskilstuna"
+  };
+}
+
+async function createInvoicePdfAction() {
+  const payload = collectInvoicePayload();
+  if (!payload.invoiceNumber || !payload.customerName || !payload.lines.some((line) => parseInvoiceAmount(line.amount) > 0)) {
+    elements.invoiceFeedback.textContent = "Fyll i fakturanummer, kundnamn och minst en rad med belopp.";
+    return;
+  }
+
+  elements.invoiceFeedback.textContent = "Skapar PDF...";
+  elements.createInvoicePdfButton.disabled = true;
+  try {
+    const result = await window.desktopApp.createInvoicePdf(payload);
+    elements.invoiceFeedback.textContent = result?.canceled ? "PDF-skapande avbrutet." : `PDF skapad: ${result.filePath}`;
+  } catch (error) {
+    elements.invoiceFeedback.textContent = error.message || "Kunde inte skapa PDF.";
+  } finally {
+    elements.createInvoicePdfButton.disabled = false;
+  }
+}
+
 function renderExport() {
   const monthKey = elements.planningMonthInput.value || currentMonthKey();
   const plannedItems = state.data.scheduleItems
@@ -1562,14 +2077,1552 @@ function renderExport() {
   );
 }
 
+function createDefaultAdStudioFields() {
+  return {
+    brand: "",
+    headline: "",
+    subheadline: "",
+    body: "",
+    cta: "",
+    phone: "",
+    email: "",
+    website: "",
+    instructions: "",
+    researchUrls: "",
+    creativeFeedback: "",
+    accent: "#f97316"
+  };
+}
+
+function renderAdStudio() {
+  if (state.currentView !== "ads" || !elements.adsPreview) {
+    return;
+  }
+  markAdStudioDomActive();
+  renderAdStudioCustomerOptions();
+  syncAdStudioInputs();
+  renderAdStudioStatus();
+  renderAdStudioAssets();
+  renderAdStudioResearch();
+  renderAdStudioBrief();
+  renderAdStudioBriefActions();
+  renderAdStudioConcepts();
+  renderAdPreview();
+  renderAdStudioFeedbackState();
+  renderAdStudioGenerationProgress();
+  renderAdStudioBusyState();
+}
+
+function deactivateAdStudioDom() {
+  if (!elements.adsPreview || elements.adsPreview.dataset.unloaded === "1") {
+    return;
+  }
+  elements.adsPreview.innerHTML = "";
+  elements.adsPreview.className = "ad-preview-v2";
+  elements.adsPreview.dataset.finalAssetId = "";
+  elements.adsPreview.dataset.unloaded = "1";
+  if (elements.adsAssetGrid) {
+    elements.adsAssetGrid.innerHTML = "";
+  }
+  if (elements.adsVariantList) {
+    elements.adsVariantList.innerHTML = "";
+  }
+  releaseAdStudioFullImageData();
+}
+
+function markAdStudioDomActive() {
+  if (elements.adsPreview) {
+    elements.adsPreview.dataset.unloaded = "0";
+  }
+}
+
+function renderAdStudioCustomerOptions() {
+  if (!elements.adsCustomerSelect) {
+    return;
+  }
+  const selectedValue = state.adStudio.selectedLeadId || "";
+  const options = [
+    `<option value="">Frist\u00e5ende annons</option>`,
+    ...getAdStudioLeads().map((lead) => {
+      const label = [lead.companyName || "Ok\u00e4nd kund", getLeadCityLabel(lead)].filter(Boolean).join(" - ");
+      return `<option value="${escapeHtml(lead.id)}">${escapeHtml(label)}</option>`;
+    })
+  ];
+  elements.adsCustomerSelect.innerHTML = options.join("");
+  elements.adsCustomerSelect.value = selectedValue;
+}
+
+function syncAdStudioInputs() {
+  const fields = state.adStudio.fields;
+  syncAdStudioInput(elements.adsCustomerSelect, state.adStudio.selectedLeadId || "");
+  syncAdStudioInput(elements.adsOpenAiKeyInput, state.data.settings.openaiApiKey || "");
+  syncAdStudioInput(elements.adsBrandInput, fields.brand);
+  syncAdStudioInput(elements.adsHeadlineInput, fields.headline);
+  syncAdStudioInput(elements.adsSubheadlineInput, fields.subheadline);
+  syncAdStudioInput(elements.adsBodyInput, fields.body);
+  syncAdStudioInput(elements.adsCtaInput, fields.cta);
+  syncAdStudioInput(elements.adsPhoneInput, fields.phone);
+  syncAdStudioInput(elements.adsEmailInput, fields.email);
+  syncAdStudioInput(elements.adsWebsiteInput, fields.website);
+  syncAdStudioInput(elements.adsInstructionsInput, fields.instructions);
+  syncAdStudioInput(elements.adsResearchInput, fields.researchUrls);
+  syncAdStudioInput(elements.adsCreativeFeedbackInput, fields.creativeFeedback);
+  syncAdStudioInput(elements.adsAccentInput, fields.accent || "#f97316");
+}
+
+function syncAdStudioInput(element, value) {
+  if (!element || document.activeElement === element) {
+    return;
+  }
+  const nextValue = String(value || "");
+  if (element.value !== nextValue) {
+    element.value = nextValue;
+  }
+}
+
+function renderAdStudioStatus() {
+  if (!elements.adsQualityBadge) {
+    return;
+  }
+  const fields = state.adStudio.fields;
+  const score = [
+    Boolean(fields.brand.trim()),
+    Boolean(fields.instructions.trim() || fields.creativeFeedback.trim() || state.adStudio.research),
+    state.adStudio.assets.length > 0,
+    Boolean(state.adStudio.brief),
+    state.adStudio.concepts.length > 0,
+    Boolean((fields.phone || fields.email || fields.website).trim())
+  ].filter(Boolean).length;
+  elements.adsQualityBadge.textContent = score >= 5 ? "Klar brief" : score >= 3 ? "Material redo" : "V\u00e4ntar";
+
+  elements.views.ads?.querySelectorAll(".annonsstudio-status-card").forEach((card, index) => {
+    const hasCompleteAd = state.adStudio.concepts.some((concept) => getAdStudioFinalAsset(concept));
+    const activeIndex = hasCompleteAd ? 2 : state.adStudio.brief ? 1 : 0;
+    card.classList.toggle("is-active", index <= activeIndex);
+  });
+}
+
+function renderAdPreview() {
+  if (!elements.adsPreview) {
+    return;
+  }
+  const concept = getActiveAdStudioConcept();
+  const finalAsset = getAdStudioFinalAsset(concept);
+  if (finalAsset && !finalAsset.dataUrl && finalAsset.assetStorageId) {
+    elements.adsPreview.dataset.finalAssetId = "";
+    elements.adsPreview.className = "ad-preview-empty";
+    elements.adsPreview.innerHTML = `
+      <div>
+        <strong>Laddar komplett annonsbild...</strong>
+        <span>Originalbilden h&auml;mtas fr&aring;n lokal asset-cache.</span>
+      </div>
+    `;
+    void resolveAdStudioAssetDataUrl(finalAsset).then(() => {
+      if (state.currentView === "ads") {
+        renderAdPreview();
+      }
+    }).catch(() => {});
+    return;
+  }
+  if (finalAsset?.dataUrl) {
+    if (elements.adsPreview.dataset.finalAssetId === finalAsset.id && elements.adsPreview.className === "ad-preview-final") {
+      if (elements.adsActiveConceptTitle) {
+        elements.adsActiveConceptTitle.textContent = `${concept?.title || "Komplett annons"} · komplett annons`;
+      }
+      return;
+    }
+    elements.adsPreview.dataset.finalAssetId = finalAsset.id;
+    elements.adsPreview.className = "ad-preview-final";
+    elements.adsPreview.innerHTML = `<img src="${escapeHtml(finalAsset.dataUrl)}" decoding="async" alt="" />`;
+    if (elements.adsActiveConceptTitle) {
+      elements.adsActiveConceptTitle.textContent = `${concept?.title || "Komplett annons"} · komplett annons`;
+    }
+    return;
+  }
+  elements.adsPreview.dataset.finalAssetId = "";
+  elements.adsPreview.className = "ad-preview-empty";
+  elements.adsPreview.innerHTML = `
+    <div>
+      <strong>Ingen komplett annonsbild genererad &auml;n.</strong>
+      <span>V&auml;lj en AI-riktning och klicka p&aring; Generera komplett annonsbild. D&aring; skapar GPT Image 2 hela annonsen sj&auml;lv.</span>
+    </div>
+  `;
+  if (elements.adsActiveConceptTitle) {
+    elements.adsActiveConceptTitle.textContent = concept?.title ? `${concept.title} · riktning vald` : "V&auml;lj riktning och generera";
+  }
+}
+
+function renderAdStudioLayer(layer, fields, concept) {
+  const commonStyle = [
+    `left:${layer.x}%`,
+    `top:${layer.y}%`,
+    `width:${layer.w}%`,
+    `height:${layer.h}%`,
+    `opacity:${layer.opacity ?? 1}`
+  ].join(";");
+  if (layer.type === "shape") {
+    const radius = layer.shape === "circle" ? "999px" : `${layer.radius || 0}px`;
+    return `<div class="ad-layer ad-layer-shape" style="${commonStyle};background:${escapeHtml(layer.color)};border-radius:${radius};"></div>`;
+  }
+  if (layer.type === "line") {
+    return `<div class="ad-layer ad-layer-line" style="${commonStyle};background:${escapeHtml(layer.color)};border-radius:${layer.radius || 999}px;"></div>`;
+  }
+  const text = getAdStudioLayerText(layer, fields, concept);
+  const fontSize = Math.max(0.7, (Number(layer.fontSize) || 40) / 19.2);
+  const transformed = layer.transform === "uppercase" ? text.toUpperCase() : text;
+  const alignItems = layer.align === "center" ? "center" : layer.align === "right" ? "flex-end" : "flex-start";
+  const textAlign = layer.align || "left";
+  return `
+    <div class="ad-layer ad-layer-text" style="${commonStyle};color:${escapeHtml(layer.color)};font-size:${fontSize}cqw;font-weight:${Number(layer.weight) || 800};line-height:${Number(layer.lineHeight) || 1.12};text-align:${textAlign};align-items:${alignItems};">
+      ${escapeHtml(transformed).replaceAll("\n", "<br />")}
+    </div>
+  `;
+}
+
+function renderAdStudioConcepts() {
+  if (!elements.adsVariantList) {
+    return;
+  }
+  const concepts = getAdStudioDisplayConcepts();
+  if (!concepts.length) {
+    elements.adsVariantList.innerHTML = `<div class="empty-state compact-empty-state">Tolka materialet f\u00f6r att skapa AI-riktningar.</div>`;
+    return;
+  }
+  elements.adsVariantList.innerHTML = concepts
+    .map((variant) => {
+      const isActive = variant.id === state.adStudio.activeConceptId;
+      const asset = getAdStudioFinalAsset(variant) || getAdStudioAssetForConcept(variant);
+      return `
+        <button class="annonsstudio-variant-v2${isActive ? " is-active" : ""}" type="button" data-ad-variant="${escapeHtml(variant.id)}">
+          <span class="annonsstudio-variant-v2__thumb">${asset ? `<img src="${escapeHtml(getAdStudioAssetThumb(asset))}" loading="lazy" decoding="async" alt="" />` : ""}</span>
+          <strong>${escapeHtml(variant.title)}</strong>
+          <span>${escapeHtml(variant.rationale || "Originalriktning baserad p\u00e5 kundmaterialet.")}</span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function renderAdStudioAssets() {
+  if (!elements.adsAssetGrid) {
+    return;
+  }
+  if (!state.adStudio.assets.length) {
+    elements.adsAssetGrid.innerHTML = `<div class="empty-state compact-empty-state">Inga kundbilder inlagda &auml;n.</div>`;
+    return;
+  }
+  elements.adsAssetGrid.innerHTML = state.adStudio.assets
+    .map((asset, index) => `
+      <button class="annonsstudio-asset${asset.selected ? " is-selected" : ""}" type="button" data-ad-asset="${escapeHtml(asset.id)}">
+        <img src="${escapeHtml(getAdStudioAssetThumb(asset))}" loading="lazy" decoding="async" alt="" />
+        <span>${escapeHtml(asset.name || `Bild ${index + 1}`)}</span>
+      </button>
+    `)
+    .join("");
+}
+
+function getAdStudioAssetThumb(asset) {
+  return asset?.thumbDataUrl || asset?.dataUrl || "";
+}
+
+function releaseAdStudioFullImageData() {
+  adStudioAssetDataUrlCache.clear();
+  state.adStudio.assets.forEach((asset) => {
+    if (asset.assetStorageId && asset.dataUrl) {
+      asset.dataUrl = "";
+    }
+  });
+}
+
+function renderAdStudioResearch() {
+  if (!elements.adsResearchPanel) {
+    return;
+  }
+  const research = state.adStudio.research;
+  if (!research) {
+    elements.adsResearchPanel.innerHTML = `<span>Ingen webbanalys h&auml;mtad &auml;n.</span>`;
+    return;
+  }
+  const pages = Array.isArray(research.pages) ? research.pages : [];
+  const images = Array.isArray(research.images) ? research.images : [];
+  elements.adsResearchPanel.innerHTML = `
+    <div class="annonsstudio-research-summary">
+      <strong>${escapeHtml(pages.filter((page) => !page.error).length)} k&auml;llor l&auml;sta</strong>
+      <span>${escapeHtml(images.length)} webb-bilder hittade som AI kan v&auml;lja mellan.</span>
+    </div>
+    ${pages.length ? `
+      <ul>
+        ${pages.slice(0, 4).map((page) => `
+          <li>
+            <strong>${escapeHtml(page.title || page.url)}</strong>
+            <span>${escapeHtml(page.error || page.description || page.url)}</span>
+          </li>
+        `).join("")}
+      </ul>
+    ` : ""}
+  `;
+}
+
+function renderAdStudioBrief() {
+  if (!elements.adsBriefPanel) {
+    return;
+  }
+  const brief = state.adStudio.brief;
+  if (!brief) {
+    elements.adsBriefPanel.innerHTML = `
+      <div class="annonsstudio-brief-empty">
+        <strong>Ingen AI-brief &auml;n.</strong>
+        <span>Klistra in kundens mejl och klicka p&aring; Tolka material med AI.</span>
+      </div>
+    `;
+    return;
+  }
+  const items = [
+    ["M\u00e5lgrupp", brief.audience],
+    ["Budskap", brief.offer || brief.objective],
+    ["Ton", brief.tone],
+    ["Format", brief.format],
+    ["Kontakt", [brief.phone, brief.email, brief.website].filter(Boolean).join(" / ")]
+  ];
+  elements.adsBriefPanel.innerHTML = `
+    ${items.map(([label, value]) => `
+      <div class="annonsstudio-brief-row">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value || "Saknas")}</strong>
+      </div>
+    `).join("")}
+    ${brief.imageRead?.length ? `
+      <div class="annonsstudio-brief-row">
+        <span>Bildtolkning</span>
+        <ul>${brief.imageRead.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </div>
+    ` : ""}
+  `;
+}
+
+function renderAdStudioBriefActions() {
+  const hasBrief = Boolean(state.adStudio.brief);
+  [elements.adsCopyBriefButton, elements.adsExportBriefButton].forEach((button) => {
+    if (button) {
+      button.disabled = !hasBrief;
+    }
+  });
+}
+
+async function copyAdStudioBrief() {
+  const text = buildAdStudioBriefExportText();
+  if (!text) {
+    if (elements.adsFeedback) {
+      elements.adsFeedback.textContent = "Tolka materialet f\u00f6rst, s\u00e5 finns en AI-tolkning att kopiera.";
+    }
+    return;
+  }
+  try {
+    await writeAdStudioClipboardText(text);
+    if (elements.adsFeedback) {
+      elements.adsFeedback.textContent = "AI-tolkningen kopierades till urklipp.";
+    }
+  } catch (error) {
+    if (elements.adsFeedback) {
+      elements.adsFeedback.textContent = error.message || "Kunde inte kopiera AI-tolkningen.";
+    }
+  }
+}
+
+function exportAdStudioBrief() {
+  const text = buildAdStudioBriefExportText();
+  if (!text) {
+    if (elements.adsFeedback) {
+      elements.adsFeedback.textContent = "Tolka materialet f\u00f6rst, s\u00e5 finns en AI-tolkning att exportera.";
+    }
+    return;
+  }
+  const brand = sanitizeAdStudioFilename(state.adStudio.fields.brand || state.adStudio.brief?.customerName || "ai-tolkning");
+  downloadText(text, `${brand}-ai-tolkning.md`, "text/markdown;charset=utf-8;");
+  if (elements.adsFeedback) {
+    elements.adsFeedback.textContent = "AI-tolkningen exporterades som Markdown.";
+  }
+}
+
+function buildAdStudioBriefExportText() {
+  const brief = state.adStudio.brief;
+  if (!brief) {
+    return "";
+  }
+  const fields = getAdStudioPreviewFields(getActiveAdStudioConcept());
+  const concepts = getAdStudioDisplayConcepts();
+  const activeConcept = getActiveAdStudioConcept();
+  const lines = [
+    `# AI-tolkning - ${fields.brand}`,
+    "",
+    "## Kund",
+    `- F\u00f6retag: ${fields.brand}`,
+    fields.phone ? `- Telefon: ${fields.phone}` : "",
+    fields.email ? `- E-post: ${fields.email}` : "",
+    fields.website ? `- Webb: ${fields.website}` : "",
+    "",
+    "## Brief",
+    `- M\u00e5l: ${brief.objective || ""}`,
+    `- M\u00e5lgrupp: ${brief.audience || ""}`,
+    `- Budskap: ${brief.offer || ""}`,
+    `- Ton: ${brief.tone || ""}`,
+    `- Format: ${brief.format || "16:9 landskap"}`,
+    brief.mustHave?.length ? `- M\u00e5ste vara med: ${brief.mustHave.join(", ")}` : "",
+    brief.avoid?.length ? `- Undvik: ${brief.avoid.join(", ")}` : "",
+    "",
+    brief.imageRead?.length ? "## Bildtolkning" : "",
+    ...(brief.imageRead || []).map((item) => `- ${item}`),
+    "",
+    "## AI-riktningar",
+    ...concepts.flatMap((concept, index) => [
+      "",
+      `### ${index + 1}. ${concept.title}`,
+      concept.rationale ? `- Varf\u00f6r: ${concept.rationale}` : "",
+      `- Rubrik: ${concept.headline || ""}`,
+      concept.subheadline ? `- Underrubrik: ${concept.subheadline}` : "",
+      concept.cta ? `- CTA: ${concept.cta}` : "",
+      concept.bullets?.length ? `- St\u00f6dpunkter: ${concept.bullets.join(" | ")}` : ""
+    ]),
+    "",
+    activeConcept ? "## Aktiv riktning" : "",
+    activeConcept ? `- ${activeConcept.title}` : "",
+    "",
+    state.adStudio.appliedCreativeFeedback ? "## Verkst\u00e4lld feedback" : "",
+    state.adStudio.appliedCreativeFeedback || "",
+    "",
+    state.adStudio.research?.summary ? "## Webbunderslag" : "",
+    state.adStudio.research?.summary || "",
+    "",
+    state.adStudio.fields.instructions ? "## Kundmejl / instruktioner" : "",
+    state.adStudio.fields.instructions || ""
+  ].filter((line, index, array) => line || array[index - 1]);
+  return lines.join("\n").trim();
+}
+
+async function writeAdStudioClipboardText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const ok = document.execCommand("copy");
+  textarea.remove();
+  if (!ok) {
+    throw new Error("Urklipp kunde inte anv\u00e4ndas.");
+  }
+}
+
+function renderAdStudioFeedbackState() {
+  if (!elements.adsFeedbackStatus) {
+    return;
+  }
+  const current = String(state.adStudio.fields.creativeFeedback || "").trim();
+  const applied = String(state.adStudio.appliedCreativeFeedback || "").trim();
+  if (!current) {
+    elements.adsFeedbackStatus.textContent = "Ingen feedback verkst\u00e4lld.";
+    elements.adsFeedbackStatus.dataset.state = "empty";
+  } else if (current === applied) {
+    elements.adsFeedbackStatus.textContent = "Feedback verkst\u00e4lld. N\u00e4sta bild anv\u00e4nder den.";
+    elements.adsFeedbackStatus.dataset.state = "applied";
+  } else {
+    elements.adsFeedbackStatus.textContent = "Ny feedback ej verkst\u00e4lld \u00e4n.";
+    elements.adsFeedbackStatus.dataset.state = "pending";
+  }
+  if (elements.adsApplyFeedbackButton) {
+    elements.adsApplyFeedbackButton.disabled = state.adStudio.isBusy || !current || current === applied;
+  }
+}
+
+function startAdStudioImageProgress(isRevision = false) {
+  stopAdStudioImageProgressTimer();
+  state.adStudio.imageProgress = {
+    active: true,
+    value: 7,
+    label: isRevision ? "Verkst\u00e4ller feedback och f\u00f6rbereder ny version..." : "F\u00f6rbereder material till GPT Image 2..."
+  };
+  renderAdStudioGenerationProgress();
+  adStudioImageProgressTimer = setInterval(() => {
+    const progress = state.adStudio.imageProgress;
+    if (!progress.active) {
+      stopAdStudioImageProgressTimer();
+      return;
+    }
+    const nextValue = Math.min(92, progress.value + (progress.value < 35 ? 8 : progress.value < 70 ? 5 : 2));
+    state.adStudio.imageProgress = {
+      active: true,
+      value: nextValue,
+      label: getAdStudioProgressLabel(nextValue)
+    };
+    renderAdStudioGenerationProgress();
+  }, 1200);
+}
+
+function finishAdStudioImageProgress(label = "Komplett annonsbild skapad.") {
+  stopAdStudioImageProgressTimer();
+  state.adStudio.imageProgress = {
+    active: true,
+    value: 100,
+    label
+  };
+  renderAdStudioGenerationProgress();
+  setTimeout(() => {
+    state.adStudio.imageProgress = { active: false, value: 0, label: "" };
+    renderAdStudioGenerationProgress();
+  }, 1400);
+}
+
+function cancelAdStudioImageProgress() {
+  stopAdStudioImageProgressTimer();
+  state.adStudio.imageProgress = { active: false, value: 0, label: "" };
+  renderAdStudioGenerationProgress();
+}
+
+function stopAdStudioImageProgressTimer() {
+  if (adStudioImageProgressTimer) {
+    clearInterval(adStudioImageProgressTimer);
+    adStudioImageProgressTimer = null;
+  }
+}
+
+function getAdStudioProgressLabel(value) {
+  if (value < 28) {
+    return "Paketerar brief, bilder och feedback...";
+  }
+  if (value < 55) {
+    return "GPT Image 2 komponerar annonsen...";
+  }
+  if (value < 78) {
+    return "Finputsar layout, text och visuellt fokus...";
+  }
+  return "Tar emot och f\u00f6rbereder annonsbilden...";
+}
+
+function renderAdStudioGenerationProgress() {
+  if (!elements.adsGenerationProgress) {
+    return;
+  }
+  const progress = state.adStudio.imageProgress || { active: false, value: 0, label: "" };
+  elements.adsGenerationProgress.hidden = !progress.active;
+  if (elements.adsGenerationProgressLabel) {
+    elements.adsGenerationProgressLabel.textContent = progress.label || "Genererar annonsbild...";
+  }
+  if (elements.adsGenerationProgressValue) {
+    elements.adsGenerationProgressValue.textContent = `${Math.round(progress.value || 0)}%`;
+  }
+  if (elements.adsGenerationProgressBar) {
+    elements.adsGenerationProgressBar.style.width = `${Math.max(0, Math.min(100, progress.value || 0))}%`;
+  }
+}
+
+function handleAdStudioCustomerChange(event) {
+  const leadId = event.target.value || "";
+  state.adStudio.selectedLeadId = leadId;
+  const lead = findLead(leadId);
+  if (!lead) {
+    state.adStudio.fields = createDefaultAdStudioFields();
+    state.adStudio.brief = null;
+    state.adStudio.concepts = [];
+    state.adStudio.research = null;
+    state.adStudio.appliedCreativeFeedback = "";
+    state.adStudio.activeConceptId = "";
+    if (elements.adsFeedback) {
+      elements.adsFeedback.textContent = "Frist\u00e5ende annons vald.";
+    }
+    renderAdStudio();
+    return;
+  }
+
+  state.adStudio.fields = {
+    ...createDefaultAdStudioFields(),
+    brand: lead.companyName || "",
+    phone: lead.phone || "",
+    email: lead.email || "",
+    website: normalizeAdStudioWebsite(lead.website || ""),
+    researchUrls: normalizeAdStudioWebsite(lead.website || ""),
+    instructions: [getLeadBranchLabel(lead), getLeadCityLabel(lead)].filter(Boolean).join(". ")
+  };
+  state.adStudio.brief = null;
+  state.adStudio.concepts = [];
+  state.adStudio.research = null;
+  state.adStudio.appliedCreativeFeedback = "";
+  state.adStudio.activeConceptId = "";
+  if (elements.adsFeedback) {
+    elements.adsFeedback.textContent = "Kunddata h\u00e4mtad. Klistra in mejlet och ladda upp bilderna s\u00e5 tolkar AI:n resten.";
+  }
+  renderAdStudio();
+}
+
+function updateAdStudioField(field, value) {
+  state.adStudio.fields[field] = value;
+  if (["headline", "subheadline", "body", "cta", "accent"].includes(field)) {
+    updateActiveAdStudioConceptFromFields();
+  }
+  renderAdStudioStatus();
+  if (field === "creativeFeedback") {
+    renderAdStudioFeedbackState();
+  }
+  renderAdPreview();
+}
+
+function applyAdStudioFeedback(options = {}) {
+  collectAdStudioFieldsFromInputs();
+  const feedback = String(state.adStudio.fields.creativeFeedback || "").trim();
+  state.adStudio.appliedCreativeFeedback = feedback;
+  renderAdStudioFeedbackState();
+  if (!options.silent && elements.adsFeedback) {
+    elements.adsFeedback.textContent = feedback
+      ? "Feedback verkst\u00e4lld. N\u00e4sta kompletta annonsbild anv\u00e4nder den."
+      : "Feedback rensad.";
+  }
+  return feedback;
+}
+
+async function handleAdStudioFilesInput(event) {
+  const files = [...(event.target.files || [])].filter((file) => file.type.startsWith("image/"));
+  const shouldSelectFirstAsset = state.adStudio.assets.length === 0;
+  const assets = await Promise.all(files.map(async (file, index) => {
+    const dataUrl = await readFileAsDataUrl(file);
+    const saved = await saveAdStudioAssetDataUrl(dataUrl, file.name, "customer");
+    return {
+      id: createAdStudioId("asset"),
+      name: file.name,
+      thumbDataUrl: await createAdStudioThumbnail(dataUrl, 320),
+      assetStorageId: saved.assetStorageId || "",
+      dataUrl: saved.assetStorageId ? "" : dataUrl,
+      selected: shouldSelectFirstAsset && index === 0,
+      type: "customer"
+    };
+  }));
+  state.adStudio.assets.push(...assets);
+  if (elements.adsFeedback) {
+    elements.adsFeedback.textContent = `${assets.length} bild${assets.length === 1 ? "" : "er"} inlagda. AI:n kan nu tolka dem tillsammans med instruktionerna.`;
+  }
+  event.target.value = "";
+  renderAdStudio();
+}
+
+function handleAdStudioAssetClick(event) {
+  const button = event.target.closest("[data-ad-asset]");
+  if (!button) {
+    return;
+  }
+  state.adStudio.assets.forEach((asset) => {
+    asset.selected = asset.id === button.dataset.adAsset;
+  });
+  const concept = getActiveAdStudioConcept();
+  if (concept) {
+    concept.imageIndex = state.adStudio.assets.findIndex((asset) => asset.selected);
+  }
+  renderAdStudio();
+}
+
+async function researchAdStudioCustomer(options = {}) {
+  collectAdStudioFieldsFromInputs();
+  const lead = findLead(state.adStudio.selectedLeadId);
+  const urls = parseAdStudioResearchUrls(state.adStudio.fields.researchUrls || state.adStudio.fields.website);
+  if (!urls.length && !state.adStudio.fields.brand && !lead?.companyName) {
+    if (elements.adsFeedback) {
+      elements.adsFeedback.textContent = "L\u00e4gg in f\u00f6retagsnamn, hemsida eller publik l\u00e4nk f\u00f6rst.";
+    }
+    return null;
+  }
+  state.adStudio.isBusy = true;
+  if (!options.quiet && elements.adsFeedback) {
+    elements.adsFeedback.textContent = "AI h\u00e4mtar publik f\u00f6retagsprofil, texter och anv\u00e4ndbara webb-bilder...";
+  }
+  renderAdStudioBusyState();
+  try {
+    const result = await window.desktopApp.researchAdCustomer({
+      brand: state.adStudio.fields.brand || lead?.companyName || "",
+      city: lead ? getLeadCityLabel(lead) : "",
+      category: lead ? getLeadBranchLabel(lead) : "",
+      website: state.adStudio.fields.website,
+      researchUrls: state.adStudio.fields.researchUrls,
+      urls
+    });
+    state.adStudio.research = result;
+    const shouldSelectFirstResearchAsset = state.adStudio.assets.length === 0;
+    const researchAssets = await Promise.all((result.images || []).map(async (image, index) => {
+      const saved = await saveAdStudioAssetDataUrl(image.dataUrl, image.name || "webb-bild", "research");
+      return {
+        id: createAdStudioId("asset"),
+        name: image.name || "webb-bild",
+        thumbDataUrl: image.thumbDataUrl || await createAdStudioThumbnail(image.dataUrl, 320),
+        assetStorageId: saved.assetStorageId || "",
+        dataUrl: saved.assetStorageId ? "" : image.dataUrl,
+        sourceUrl: image.sourceUrl || "",
+        selected: shouldSelectFirstResearchAsset && index === 0,
+        type: "research"
+      };
+    }));
+    if (researchAssets.length) {
+      state.adStudio.assets.push(...researchAssets);
+    }
+    if (elements.adsFeedback) {
+      elements.adsFeedback.textContent = `Webbunderslag klart: ${result.pages?.filter((page) => !page.error).length || 0} k\u00e4llor och ${researchAssets.length} bilder hittade.`;
+    }
+    return result;
+  } catch (error) {
+    if (elements.adsFeedback) {
+      elements.adsFeedback.textContent = error.message || "Kunde inte h\u00e4mta webbunderslag.";
+    }
+    return null;
+  } finally {
+    state.adStudio.isBusy = false;
+    renderAdStudio();
+  }
+}
+
+function parseAdStudioResearchUrls(value) {
+  return String(value || "")
+    .split(/[\n,;\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+async function getAdStudioBriefImagePayloads() {
+  const assets = state.adStudio.assets.filter((asset) => ["customer", "research"].includes(asset.type)).slice(0, 8);
+  const payloads = [];
+  for (const asset of assets) {
+    const dataUrl = await resolveAdStudioAssetDataUrl(asset, { hydrate: false });
+    if (dataUrl) {
+      payloads.push({ name: asset.name, dataUrl });
+    }
+  }
+  return payloads;
+}
+
+async function generateAdStudioBrief(options = {}) {
+  collectAdStudioFieldsFromInputs();
+  hydrateAdStudioFieldsFromInstructions();
+  const openaiApiKey = elements.adsOpenAiKeyInput?.value.trim() || state.data.settings.openaiApiKey || "";
+  if (!openaiApiKey) {
+    elements.adsFeedback.textContent = "OpenAI API-nyckel saknas. Klistra in nyckeln i f\u00e4ltet och k\u00f6r igen.";
+    return;
+  }
+  state.adStudio.isBusy = true;
+  elements.adsFeedback.textContent = "AI agerar mediateam: tolkar kundmaterial, webbunderslag, bildval och budskap...";
+  renderAdStudioBusyState();
+  try {
+    if (!state.adStudio.research && (state.adStudio.fields.researchUrls || state.adStudio.fields.website) && !options.skipResearch) {
+      state.adStudio.isBusy = false;
+      await researchAdStudioCustomer({ quiet: true });
+      state.adStudio.isBusy = true;
+      renderAdStudioBusyState();
+    }
+    await window.desktopApp.saveSettings({ openaiApiKey });
+    state.data.settings.openaiApiKey = openaiApiKey;
+    const lead = findLead(state.adStudio.selectedLeadId);
+    const result = await window.desktopApp.generateAdBrief({
+      openaiApiKey,
+      lead,
+      brand: state.adStudio.fields.brand,
+      phone: state.adStudio.fields.phone,
+      email: state.adStudio.fields.email,
+      website: state.adStudio.fields.website,
+      instructions: state.adStudio.fields.instructions,
+      creativeFeedback: state.adStudio.fields.creativeFeedback,
+      webResearch: state.adStudio.research,
+      images: await getAdStudioBriefImagePayloads()
+    });
+    state.adStudio.brief = result.brief;
+    state.adStudio.concepts = result.concepts.map((concept, index) => ({
+      ...concept,
+      id: concept.id || createAdStudioId("concept"),
+      imageIndex: Number.isInteger(concept.imageIndex) ? Math.max(0, Math.min(concept.imageIndex, state.adStudio.assets.length - 1)) : index % Math.max(state.adStudio.assets.length, 1)
+    }));
+    state.adStudio.activeConceptId = state.adStudio.concepts[0]?.id || "";
+    hydrateAdStudioFieldsFromBrief();
+    applyAdStudioConcept(state.adStudio.activeConceptId, { render: false });
+    elements.adsFeedback.textContent = options.force ? "AI-riktningar regenererade." : "AI-riktningar klara. V\u00e4lj riktning och generera en komplett annonsbild.";
+  } catch (error) {
+    elements.adsFeedback.textContent = error.message || "Kunde inte tolka materialet.";
+  } finally {
+    state.adStudio.isBusy = false;
+    renderAdStudio();
+  }
+}
+
+async function generateAdStudioConcepts() {
+  await generateAdStudioBrief({ force: Boolean(state.adStudio.brief) });
+}
+
+function handleAdVariantClick(event) {
+  const button = event.target.closest("[data-ad-variant]");
+  if (!button) {
+    return;
+  }
+  applyAdStudioConcept(button.dataset.adVariant);
+}
+
+function applyAdStudioConcept(variantId, options = {}) {
+  const variant = getAdStudioDisplayConcepts().find((item) => item.id === variantId);
+  if (!variant) {
+    return;
+  }
+  state.adStudio.activeConceptId = variant.id;
+  state.adStudio.fields = {
+    ...state.adStudio.fields,
+    headline: variant.headline,
+    subheadline: variant.subheadline,
+    cta: variant.cta,
+    body: (variant.bullets || []).join("\n"),
+    accent: variant.palette?.accent || state.adStudio.fields.accent || "#f97316"
+  };
+  if (options.render !== false) {
+    renderAdStudio();
+  }
+}
+
+function resetAdStudio() {
+  cancelAdStudioImageProgress();
+  state.adStudio = {
+    selectedLeadId: "",
+    activeConceptId: "",
+    assets: [],
+    brief: null,
+    concepts: [],
+    research: null,
+    appliedCreativeFeedback: "",
+    imageProgress: {
+      active: false,
+      value: 0,
+      label: ""
+    },
+    status: "material",
+    fields: createDefaultAdStudioFields(),
+    isBusy: false
+  };
+  if (elements.adsFilesInput) {
+    elements.adsFilesInput.value = "";
+  }
+  if (elements.adsFeedback) {
+    elements.adsFeedback.textContent = "Annonsstudion \u00e4r nollst\u00e4lld.";
+  }
+  renderAdStudio();
+}
+
+function collectAdStudioFieldsFromInputs() {
+  state.adStudio.fields = {
+    brand: getAdStudioInputValue(elements.adsBrandInput, state.adStudio.fields.brand),
+    headline: getAdStudioInputValue(elements.adsHeadlineInput, state.adStudio.fields.headline),
+    subheadline: getAdStudioInputValue(elements.adsSubheadlineInput, state.adStudio.fields.subheadline),
+    body: getAdStudioInputValue(elements.adsBodyInput, state.adStudio.fields.body),
+    cta: getAdStudioInputValue(elements.adsCtaInput, state.adStudio.fields.cta),
+    phone: getAdStudioInputValue(elements.adsPhoneInput, state.adStudio.fields.phone),
+    email: getAdStudioInputValue(elements.adsEmailInput, state.adStudio.fields.email),
+    website: normalizeAdStudioWebsite(getAdStudioInputValue(elements.adsWebsiteInput, state.adStudio.fields.website)),
+    instructions: getAdStudioInputValue(elements.adsInstructionsInput, state.adStudio.fields.instructions),
+    researchUrls: getAdStudioInputValue(elements.adsResearchInput, state.adStudio.fields.researchUrls),
+    creativeFeedback: getAdStudioInputValue(elements.adsCreativeFeedbackInput, state.adStudio.fields.creativeFeedback),
+    accent: elements.adsAccentInput?.value || state.adStudio.fields.accent || "#f97316"
+  };
+}
+
+function getAdStudioInputValue(element, fallback) {
+  return element ? element.value.trim() : String(fallback || "").trim();
+}
+
+function getAdStudioLeads() {
+  return [...state.data.leads]
+    .filter((lead) => !lead.isDeleted)
+    .sort((left, right) => String(left.companyName || "").localeCompare(String(right.companyName || ""), "sv"));
+}
+
+function getAdStudioDisplayConcepts() {
+  return state.adStudio.concepts.length ? state.adStudio.concepts : [];
+}
+
+function getActiveAdStudioConcept() {
+  return getAdStudioDisplayConcepts().find((item) => item.id === state.adStudio.activeConceptId) || getAdStudioDisplayConcepts()[0] || null;
+}
+
+function getAdStudioPreviewFields(concept = null) {
+  const fields = state.adStudio.fields;
+  return {
+    brand: fields.brand.trim() || state.adStudio.brief?.customerName || "Kundens varum\u00e4rke",
+    headline: fields.headline.trim() || concept?.headline || "Tydligt budskap",
+    subheadline: fields.subheadline.trim() || concept?.subheadline || "Skapat f\u00f6r lokal synlighet",
+    body: fields.body.trim() || (concept?.bullets || []).join("\n"),
+    cta: fields.cta.trim() || concept?.cta || "Kontakta oss",
+    phone: fields.phone.trim(),
+    email: fields.email.trim(),
+    website: normalizeAdStudioWebsite(fields.website),
+    accent: fields.accent || concept?.palette?.accent || "#f97316"
+  };
+}
+
+function getAdStudioDesign(concept, fields) {
+  if (concept?.design?.layers?.length) {
+    return {
+      background: {
+        imageIndex: Number.isInteger(concept.design.background?.imageIndex) ? concept.design.background.imageIndex : concept.imageIndex || 0,
+        color: concept.design.background?.color || concept.palette?.primary || "#0f172a",
+        fit: concept.design.background?.fit || "cover",
+        focalX: clampAdStudioNumber(concept.design.background?.focalX, 0, 100, 50),
+        focalY: clampAdStudioNumber(concept.design.background?.focalY, 0, 100, 50),
+        overlayColor: concept.design.background?.overlayColor || "#000000",
+        overlayOpacity: clampAdStudioNumber(concept.design.background?.overlayOpacity, 0, 0.9, 0.3)
+      },
+      layers: concept.design.layers.map((layer) => normalizeClientAdStudioLayer(layer)).filter(Boolean)
+    };
+  }
+  return buildClientFallbackAdStudioDesign(concept, fields);
+}
+
+function normalizeClientAdStudioLayer(layer = {}) {
+  const type = ["text", "shape", "line"].includes(layer.type) ? layer.type : "";
+  if (!type) {
+    return null;
+  }
+  const normalized = {
+    type,
+    role: String(layer.role || ""),
+    x: clampAdStudioNumber(layer.x, 0, 100, 6),
+    y: clampAdStudioNumber(layer.y, 0, 100, 8),
+    w: clampAdStudioNumber(layer.w, 2, 100, 35),
+    h: clampAdStudioNumber(layer.h, 1, 100, 10),
+    color: isHexColor(layer.color) ? layer.color : type === "text" ? "#ffffff" : "#000000",
+    opacity: clampAdStudioNumber(layer.opacity, 0, 1, 1),
+    radius: clampAdStudioNumber(layer.radius, 0, 24, 0)
+  };
+  if (type === "text") {
+    normalized.text = String(layer.text || "");
+    normalized.fontSize = clampAdStudioNumber(layer.fontSize, 14, 150, 46);
+    normalized.weight = clampAdStudioNumber(layer.weight, 300, 950, 800);
+    normalized.align = ["left", "center", "right"].includes(layer.align) ? layer.align : "left";
+    normalized.lineHeight = clampAdStudioNumber(layer.lineHeight, 0.9, 1.65, 1.12);
+    normalized.transform = ["none", "uppercase"].includes(layer.transform) ? layer.transform : "none";
+  }
+  if (type === "shape") {
+    normalized.shape = layer.shape === "circle" ? "circle" : "rect";
+  }
+  return normalized;
+}
+
+function buildClientFallbackAdStudioDesign(concept, fields) {
+  const palette = concept?.palette || { primary: "#0f172a", accent: fields.accent || "#f97316", surface: "#ffffff", text: "#ffffff" };
+  const panelX = concept?.imageIndex % 2 === 0 ? 6 : 54;
+  return {
+    background: {
+      imageIndex: Number.isInteger(concept?.imageIndex) ? concept.imageIndex : 0,
+      color: palette.primary || "#0f172a",
+      fit: "cover",
+      focalX: 50,
+      focalY: 50,
+      overlayColor: "#000000",
+      overlayOpacity: 0.22
+    },
+    layers: [
+      { type: "shape", shape: "rect", x: panelX, y: 8, w: 40, h: 78, color: palette.surface || "#ffffff", opacity: 0.9, radius: 2 },
+      { type: "line", x: panelX + 4, y: 18, w: 12, h: 0.6, color: palette.accent || fields.accent || "#f97316", opacity: 1, radius: 1 },
+      { type: "text", role: "brand", text: "", x: panelX + 4, y: 22, w: 32, h: 8, fontSize: 34, weight: 850, color: palette.primary || "#0f172a", align: "left", lineHeight: 1.05, transform: "none", opacity: 1 },
+      { type: "text", role: "headline", text: "", x: panelX + 4, y: 35, w: 32, h: 24, fontSize: 68, weight: 900, color: palette.primary || "#0f172a", align: "left", lineHeight: 1.02, transform: "none", opacity: 1 },
+      { type: "text", role: "subheadline", text: "", x: panelX + 4, y: 62, w: 32, h: 11, fontSize: 31, weight: 850, color: palette.accent || fields.accent || "#f97316", align: "left", lineHeight: 1.12, transform: "none", opacity: 1 },
+      { type: "text", role: "cta", text: "", x: panelX + 4, y: 80, w: 32, h: 7, fontSize: 28, weight: 900, color: palette.primary || "#0f172a", align: "left", lineHeight: 1.1, transform: "uppercase", opacity: 1 }
+    ]
+  };
+}
+
+function getAdStudioLayerText(layer, fields, concept) {
+  if (layer.role === "brand") {
+    return fields.brand;
+  }
+  if (layer.role === "headline") {
+    return fields.headline;
+  }
+  if (layer.role === "subheadline") {
+    return fields.subheadline;
+  }
+  if (layer.role === "bullets") {
+    return getAdStudioBullets(fields.body, concept).join("\n");
+  }
+  if (layer.role === "cta") {
+    return fields.cta;
+  }
+  if (layer.role === "contact") {
+    return [fields.phone, fields.email, fields.website].filter(Boolean).join("   ");
+  }
+  return layer.text || "";
+}
+
+function isHexColor(value) {
+  return /^#[0-9a-f]{6}$/i.test(String(value || ""));
+}
+
+function clampAdStudioNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, number));
+}
+
+function normalizeAdStudioWebsite(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "www.")
+    .replace(/\/$/, "");
+}
+
+function shortenAdStudioText(value, maxLength) {
+  const text = String(value || "").trim();
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 1).trim()}...`;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(reader.error || new Error("Kunde inte l\u00e4sa filen.")));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function createAdStudioThumbnail(dataUrl, maxSize = 320) {
+  const image = await loadAdStudioImage(dataUrl);
+  if (!image) {
+    return dataUrl;
+  }
+  const canvas = document.createElement("canvas");
+  const scale = Math.min(1, maxSize / Math.max(image.naturalWidth || maxSize, image.naturalHeight || maxSize));
+  canvas.width = Math.max(1, Math.round((image.naturalWidth || maxSize) * scale));
+  canvas.height = Math.max(1, Math.round((image.naturalHeight || maxSize) * scale));
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.72);
+}
+
+async function saveAdStudioAssetDataUrl(dataUrl, name, type) {
+  if (!window.desktopApp?.saveAdAsset) {
+    return { assetStorageId: "", dataUrl };
+  }
+  try {
+    return await window.desktopApp.saveAdAsset({ dataUrl, name, type });
+  } catch {
+    return { assetStorageId: "", dataUrl };
+  }
+}
+
+async function resolveAdStudioAssetDataUrl(asset, options = {}) {
+  if (!asset) {
+    return "";
+  }
+  if (asset.dataUrl) {
+    return asset.dataUrl;
+  }
+  if (!asset.assetStorageId || !window.desktopApp?.getAdAssetDataUrl) {
+    return "";
+  }
+  const cacheKey = asset.assetStorageId;
+  if (adStudioAssetDataUrlCache.has(cacheKey)) {
+    const cached = adStudioAssetDataUrlCache.get(cacheKey);
+    if (options.hydrate !== false) {
+      asset.dataUrl = cached;
+    }
+    return cached;
+  }
+  const dataUrl = await window.desktopApp.getAdAssetDataUrl({ assetStorageId: asset.assetStorageId });
+  adStudioAssetDataUrlCache.set(cacheKey, dataUrl);
+  if (options.hydrate !== false) {
+    asset.dataUrl = dataUrl;
+  }
+  return dataUrl;
+}
+
+async function exportAdStudioPng() {
+  collectAdStudioFieldsFromInputs();
+  const canvas = document.createElement("canvas");
+  canvas.width = 1920;
+  canvas.height = 1080;
+  const ctx = canvas.getContext("2d");
+  const concept = getActiveAdStudioConcept();
+  const fields = getAdStudioPreviewFields(concept);
+  const finalAsset = getAdStudioFinalAsset(concept);
+  if (!finalAsset) {
+    if (elements.adsFeedback) {
+      elements.adsFeedback.textContent = "Generera en komplett annonsbild f\u00f6rst. Exporten ska inte anv\u00e4nda gamla mallager.";
+    }
+    return;
+  }
+  const finalDataUrl = await resolveAdStudioAssetDataUrl(finalAsset, { hydrate: false });
+  const finalImage = await loadAdStudioImage(finalDataUrl);
+
+  elements.adsExportButton.disabled = true;
+  try {
+    if (!finalImage) {
+      throw new Error("Den kompletta annonsbilden kunde inte l\u00e4sas. Generera en ny bild och f\u00f6rs\u00f6k igen.");
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, 1920, 1080);
+    drawImageCover(ctx, finalImage, 0, 0, 1920, 1080);
+    const link = document.createElement("a");
+    link.href = canvas.toDataURL("image/png");
+    link.download = `${sanitizeAdStudioFilename(fields.brand)}-16x9.png`;
+    link.click();
+    if (elements.adsFeedback) {
+      elements.adsFeedback.textContent = "PNG exporterad i 1920 x 1080.";
+    }
+  } catch (error) {
+    if (elements.adsFeedback) {
+      elements.adsFeedback.textContent = error.message || "Kunde inte exportera PNG.";
+    }
+  } finally {
+    elements.adsExportButton.disabled = false;
+  }
+}
+
+function loadAdStudioImage(dataUrl) {
+  if (!dataUrl) {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", () => resolve(null));
+    image.src = dataUrl;
+  });
+}
+
+function drawAdStudioCanvas(ctx, concept, fields, mediaImage, design) {
+  const spec = design || getAdStudioDesign(concept, fields);
+  ctx.fillStyle = spec.background.color || "#0f172a";
+  ctx.fillRect(0, 0, 1920, 1080);
+  if (mediaImage) {
+    drawImageCoverWithFocal(ctx, mediaImage, 0, 0, 1920, 1080, spec.background.focalX, spec.background.focalY);
+  } else {
+    drawAdStudioFallback(ctx, 0, 0, 1920, 1080, spec.background.color || "#0f172a", "#334155");
+  }
+  ctx.fillStyle = hexToRgba(spec.background.overlayColor || "#000000", spec.background.overlayOpacity || 0);
+  ctx.fillRect(0, 0, 1920, 1080);
+  spec.layers.forEach((layer) => drawAdStudioCanvasLayer(ctx, layer, fields, concept));
+}
+
+function drawAdStudioBackground(ctx, mediaImage, fallbackColor) {
+  if (mediaImage) {
+    drawImageCover(ctx, mediaImage, 0, 0, 1920, 1080);
+    return;
+  }
+  drawAdStudioFallback(ctx, 0, 0, 1920, 1080, fallbackColor, "#334155");
+}
+
+function drawAdStudioFallback(ctx, x, y, width, height, fromColor, toColor) {
+  const gradient = ctx.createLinearGradient(x, y, x + width, y + height);
+  gradient.addColorStop(0, fromColor);
+  gradient.addColorStop(1, toColor);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.lineWidth = 2;
+  for (let offset = -height; offset < width; offset += 92) {
+    ctx.beginPath();
+    ctx.moveTo(x + offset, y + height);
+    ctx.lineTo(x + offset + height, y);
+    ctx.stroke();
+  }
+}
+
+function drawAdStudioCanvasLayer(ctx, layer, fields, concept) {
+  const x = (layer.x / 100) * 1920;
+  const y = (layer.y / 100) * 1080;
+  const width = (layer.w / 100) * 1920;
+  const height = (layer.h / 100) * 1080;
+  ctx.save();
+  ctx.globalAlpha = layer.opacity ?? 1;
+  if (layer.type === "shape") {
+    ctx.fillStyle = layer.color;
+    if (layer.shape === "circle") {
+      ctx.beginPath();
+      ctx.ellipse(x + width / 2, y + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      fillAdStudioRoundRect(ctx, x, y, width, height, layer.radius || 0);
+    }
+    ctx.restore();
+    return;
+  }
+  if (layer.type === "line") {
+    ctx.fillStyle = layer.color;
+    fillAdStudioRoundRect(ctx, x, y, width, height, layer.radius || height / 2);
+    ctx.restore();
+    return;
+  }
+  const text = getAdStudioLayerText(layer, fields, concept);
+  drawAdStudioTextBox(ctx, text, x, y, width, height, layer);
+  ctx.restore();
+}
+
+function drawAdStudioContactBar(ctx, fields, x, y, width, height, background, color) {
+  const contactItems = [fields.phone, fields.email, fields.website].filter(Boolean);
+  ctx.fillStyle = background;
+  fillAdStudioRoundRect(ctx, x, y, width, height, 22);
+  ctx.fillStyle = color;
+  ctx.font = "800 42px Arial, sans-serif";
+  const itemWidth = width / Math.max(contactItems.length, 1);
+  contactItems.forEach((item, index) => {
+    const textX = x + 48 + index * itemWidth;
+    ctx.fillText(item, textX, y + height / 2 + 15);
+    if (index < contactItems.length - 1) {
+      ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+      ctx.fillRect(x + (index + 1) * itemWidth, y + 22, 3, height - 44);
+      ctx.fillStyle = color;
+    }
+  });
+}
+
+function drawAdStudioAccentLine(ctx, x, y, width, color) {
+  ctx.fillStyle = color;
+  fillAdStudioRoundRect(ctx, x, y, width, 8, 4);
+}
+
+function drawAdStudioWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  let line = "";
+  let linesDrawn = 0;
+  words.forEach((word) => {
+    if (linesDrawn >= maxLines) {
+      return;
+    }
+    const testLine = line ? `${line} ${word}` : word;
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      ctx.fillText(line, x, y + linesDrawn * lineHeight);
+      line = word;
+      linesDrawn += 1;
+    } else {
+      line = testLine;
+    }
+  });
+  if (line && linesDrawn < maxLines) {
+    ctx.fillText(line, x, y + linesDrawn * lineHeight);
+  }
+}
+
+function drawAdStudioTextBox(ctx, text, x, y, width, height, layer) {
+  const transformText = layer.transform === "uppercase" ? String(text || "").toUpperCase() : String(text || "");
+  const paragraphs = transformText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  let fontSize = Number(layer.fontSize) || 42;
+  const lineHeightRatio = Number(layer.lineHeight) || 1.12;
+  let lines = [];
+  while (fontSize >= 14) {
+    ctx.font = `${Number(layer.weight) || 800} ${fontSize}px Arial, sans-serif`;
+    lines = paragraphs.flatMap((paragraph) => wrapCanvasLine(ctx, paragraph, width));
+    if (lines.length * fontSize * lineHeightRatio <= height) {
+      break;
+    }
+    fontSize -= 2;
+  }
+  ctx.font = `${Number(layer.weight) || 800} ${fontSize}px Arial, sans-serif`;
+  ctx.fillStyle = layer.color;
+  ctx.textBaseline = "top";
+  const lineHeight = fontSize * lineHeightRatio;
+  const maxLines = Math.max(1, Math.floor(height / lineHeight));
+  lines.slice(0, maxLines).forEach((line, index) => {
+    const metrics = ctx.measureText(line);
+    const offset = layer.align === "center" ? (width - metrics.width) / 2 : layer.align === "right" ? width - metrics.width : 0;
+    ctx.fillText(line, x + offset, y + index * lineHeight);
+  });
+}
+
+function wrapCanvasLine(ctx, text, maxWidth) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  });
+  if (line) {
+    lines.push(line);
+  }
+  return lines;
+}
+
+function drawImageCover(ctx, image, x, y, width, height) {
+  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+  ctx.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
+}
+
+function drawImageCoverWithFocal(ctx, image, x, y, width, height, focalX = 50, focalY = 50) {
+  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+  const extraX = Math.max(0, drawWidth - width);
+  const extraY = Math.max(0, drawHeight - height);
+  const offsetX = -extraX * (clampAdStudioNumber(focalX, 0, 100, 50) / 100);
+  const offsetY = -extraY * (clampAdStudioNumber(focalY, 0, 100, 50) / 100);
+  ctx.drawImage(image, x + offsetX, y + offsetY, drawWidth, drawHeight);
+}
+
+function drawImageContain(ctx, image, x, y, maxWidth, maxHeight) {
+  const scale = Math.min(maxWidth / image.naturalWidth, maxHeight / image.naturalHeight);
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+  ctx.drawImage(image, x, y + (maxHeight - drawHeight) / 2, drawWidth, drawHeight);
+}
+
+function fillAdStudioRoundRect(ctx, x, y, width, height, radius) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + safeRadius, y);
+  ctx.lineTo(x + width - safeRadius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  ctx.lineTo(x + width, y + height - safeRadius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+  ctx.lineTo(x + safeRadius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  ctx.lineTo(x, y + safeRadius);
+  ctx.quadraticCurveTo(x, y, x + safeRadius, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function sanitizeAdStudioFilename(value) {
+  return String(value || "annonsstudio")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "annonsstudio";
+}
+
+function getAdStudioAssetForConcept(concept, design = null) {
+  if (!state.adStudio.assets.length) {
+    return null;
+  }
+  const finalAsset = getAdStudioFinalAsset(concept);
+  if (finalAsset) {
+    return finalAsset;
+  }
+  const selected = state.adStudio.assets.find((asset) => asset.selected && asset.type !== "finished-ad") || state.adStudio.assets.find((asset) => asset.selected);
+  if (!concept) {
+    return selected || state.adStudio.assets[0];
+  }
+  const designIndex = Number.isInteger(design?.background?.imageIndex) ? design.background.imageIndex : null;
+  const candidates = [state.adStudio.assets[designIndex], state.adStudio.assets[concept.imageIndex], selected, state.adStudio.assets[0]];
+  return candidates.find((asset) => asset && asset.type !== "finished-ad") || candidates.find(Boolean) || null;
+}
+
+function getAdStudioFinalAsset(concept) {
+  if (concept?.finalImageAssetId) {
+    return state.adStudio.assets.find((asset) => asset.id === concept.finalImageAssetId && asset.type === "finished-ad") || null;
+  }
+  if (!concept) {
+    return state.adStudio.assets.find((asset) => asset.selected && asset.type === "finished-ad") || null;
+  }
+  return null;
+}
+
+async function getAdStudioImageReferenceAssets(concept, options = {}) {
+  const references = [];
+  const usableReferenceTypes = new Set(["customer", "research"]);
+  const addReference = (asset) => {
+    if (!asset?.dataUrl?.startsWith("data:image/") || references.some((item) => item.id === asset.id)) {
+      return;
+    }
+    references.push(asset);
+  };
+  const previousFinalAsset = getAdStudioFinalAsset(concept);
+  const conceptAsset = state.adStudio.assets[concept?.imageIndex];
+  if (usableReferenceTypes.has(conceptAsset?.type)) {
+    addReference(conceptAsset);
+  }
+  state.adStudio.assets.filter((asset) => asset.selected && usableReferenceTypes.has(asset.type)).forEach(addReference);
+  state.adStudio.assets.filter((asset) => usableReferenceTypes.has(asset.type)).forEach(addReference);
+  if (options.includePreviousFinal) {
+    addReference(previousFinalAsset);
+  }
+  const payloads = [];
+  for (const asset of references.slice(0, 6)) {
+    const dataUrl = await resolveAdStudioAssetDataUrl(asset, { hydrate: false });
+    if (dataUrl) {
+      payloads.push({
+        id: asset.id,
+        name: asset.name,
+        dataUrl,
+        type: asset.type
+      });
+    }
+  }
+  return payloads;
+}
+
+function getAdStudioBullets(body, concept) {
+  const fromBody = String(body || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  if (fromBody.length) {
+    return fromBody;
+  }
+  return Array.isArray(concept?.bullets) ? concept.bullets : [];
+}
+
+function updateActiveAdStudioConceptFromFields() {
+  const concept = getActiveAdStudioConcept();
+  if (!concept) {
+    return;
+  }
+  concept.headline = state.adStudio.fields.headline;
+  concept.subheadline = state.adStudio.fields.subheadline;
+  concept.cta = state.adStudio.fields.cta;
+  concept.bullets = String(state.adStudio.fields.body || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  concept.palette = {
+    ...(concept.palette || {}),
+    accent: state.adStudio.fields.accent || "#f97316"
+  };
+}
+
+function hydrateAdStudioFieldsFromInstructions() {
+  const text = state.adStudio.fields.instructions || "";
+  const email = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
+  const phone = text.match(/(?:\+46|0)[\d\s-]{7,}/)?.[0]?.trim() || "";
+  const website = text.match(/(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+\.[a-z]{2,}(?:\/[^\s]*)?/i)?.[0] || "";
+  if (!state.adStudio.fields.email && email) {
+    state.adStudio.fields.email = email;
+  }
+  if (!state.adStudio.fields.phone && phone) {
+    state.adStudio.fields.phone = phone;
+  }
+  if (!state.adStudio.fields.website && website && !website.includes("@")) {
+    state.adStudio.fields.website = normalizeAdStudioWebsite(website);
+  }
+}
+
+function hydrateAdStudioFieldsFromBrief() {
+  const brief = state.adStudio.brief;
+  if (!brief) {
+    return;
+  }
+  state.adStudio.fields.brand = state.adStudio.fields.brand || brief.customerName || "";
+  state.adStudio.fields.phone = state.adStudio.fields.phone || brief.phone || "";
+  state.adStudio.fields.email = state.adStudio.fields.email || brief.email || "";
+  state.adStudio.fields.website = state.adStudio.fields.website || normalizeAdStudioWebsite(brief.website || "");
+}
+
+async function generateAdStudioImageAsset() {
+  collectAdStudioFieldsFromInputs();
+  const openaiApiKey = elements.adsOpenAiKeyInput?.value.trim() || state.data.settings.openaiApiKey || "";
+  if (!openaiApiKey) {
+    elements.adsFeedback.textContent = "OpenAI API-nyckel saknas.";
+    return;
+  }
+  const concept = getActiveAdStudioConcept();
+  const appliedFeedback = applyAdStudioFeedback({ silent: true });
+  const hasRevisionFeedback = Boolean(appliedFeedback);
+  const hasPreviousFinal = Boolean(getAdStudioFinalAsset(concept));
+  state.adStudio.isBusy = true;
+  startAdStudioImageProgress(hasRevisionFeedback && hasPreviousFinal);
+  elements.adsFeedback.textContent = hasRevisionFeedback && hasPreviousFinal
+    ? "AI skapar en ny version utifr\u00e5n din feedback..."
+    : "AI komponerar en komplett 16:9-annons fr\u00e5n kundens material...";
+  renderAdStudioBusyState();
+  try {
+    await window.desktopApp.saveSettings({ openaiApiKey });
+    const image = await window.desktopApp.generateAdImage({
+      openaiApiKey,
+      brand: state.adStudio.fields.brand,
+      fields: state.adStudio.fields,
+      brief: state.adStudio.brief || state.adStudio.fields.instructions,
+      concept: concept || "",
+      creativeFeedback: appliedFeedback,
+      webResearch: state.adStudio.research,
+      revisionId: createAdStudioId("revision"),
+      images: await getAdStudioImageReferenceAssets(concept, { includePreviousFinal: hasRevisionFeedback })
+    });
+    const savedImage = await saveAdStudioAssetDataUrl(image.dataUrl, image.name || "AI-genererad komplett annons", "finished-ad");
+    const asset = {
+      id: createAdStudioId("asset"),
+      name: image.name || "AI-genererad komplett annons",
+      dataUrl: image.dataUrl,
+      thumbDataUrl: await createAdStudioThumbnail(image.dataUrl, 480),
+      assetStorageId: savedImage.assetStorageId || "",
+      selected: true,
+      type: image.completeAd ? "finished-ad" : "generated"
+    };
+    state.adStudio.assets.forEach((item) => {
+      item.selected = false;
+    });
+    state.adStudio.assets.push(asset);
+    if (concept) {
+      concept.imageIndex = state.adStudio.assets.length - 1;
+      if (asset.type === "finished-ad") {
+        concept.finalImageAssetId = asset.id;
+      }
+    }
+    elements.adsFeedback.textContent = "Komplett AI-annons skapad. Du kan exportera den direkt eller skriva feedback i instruktionerna och generera en ny version.";
+    finishAdStudioImageProgress("Komplett annonsbild skapad.");
+  } catch (error) {
+    cancelAdStudioImageProgress();
+    elements.adsFeedback.textContent = error.message || "Kunde inte generera AI-bild.";
+  } finally {
+    state.adStudio.isBusy = false;
+    renderAdStudio();
+  }
+}
+
+function renderAdStudioBusyState() {
+  [
+    elements.adsInterpretButton,
+    elements.adsGenerateButton,
+    elements.adsGenerateImageButton,
+    elements.adsRegenerateBriefButton,
+    elements.adsResearchButton,
+    elements.adsExportButton
+  ].forEach((button) => {
+    if (button) {
+      button.disabled = state.adStudio.isBusy;
+    }
+  });
+  renderAdStudioFeedbackState();
+}
+
+function markAdStudioForReview() {
+  state.adStudio.status = "review";
+  if (elements.adsFeedback) {
+    elements.adsFeedback.textContent = "Utkastet markerades f\u00f6r granskning.";
+  }
+  renderAdStudioStatus();
+}
+
+function createAdStudioId(prefix) {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function hexToRgba(hex, opacity = 1) {
+  const safe = isHexColor(hex) ? hex : "#000000";
+  const r = Number.parseInt(safe.slice(1, 3), 16);
+  const g = Number.parseInt(safe.slice(3, 5), 16);
+  const b = Number.parseInt(safe.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${clampAdStudioNumber(opacity, 0, 1, 1)})`;
+}
+
 async function searchPlacesAction() {
+  if (state.placesSearchBusy || state.placesSaveBusy) {
+    return;
+  }
   const apiKey = elements.apiKeyInput.value.trim();
   const branch = titleCase(elements.placesIndustryInput.value.trim());
   const cities = parseList(elements.placesCityInput.value).map(titleCase);
   const rawMaxResults = Number(elements.placesMaxResultsInput.value);
   const maxResults = Number.isFinite(rawMaxResults) && rawMaxResults > 0 ? rawMaxResults : undefined;
 
+  state.placesSearchBusy = true;
   elements.placesFeedback.textContent = "Kör multi-search via Google Places...";
+  renderCampaigns();
   try {
     await window.desktopApp.saveSettings({
       apiKey,
@@ -1595,36 +3648,59 @@ async function searchPlacesAction() {
     state.placesSelection = {};
     elements.placesFeedback.textContent = error.message;
     renderCampaigns();
+  } finally {
+    state.placesSearchBusy = false;
+    renderCampaigns();
   }
 }
 
 async function savePlacesAsCampaign() {
+  if (state.placesSearchBusy || state.placesSaveBusy) {
+    return;
+  }
   const selectedLeads = getSelectedPlacesResults();
   if (!selectedLeads.length) {
     elements.placesFeedback.textContent = "Markera minst ett lead innan du sparar listan.";
     return;
   }
 
-  const branch = titleCase(elements.placesIndustryInput.value.trim());
-  const cities = parseList(elements.placesCityInput.value).map(titleCase);
-  const campaign = await window.desktopApp.createCampaign({
-    name: elements.campaignNameInput.value.trim() || [branch, cities.join(", ")].filter(Boolean).join(" ") || "Ny lista",
-    sourceType: "google-places",
-    searchQuery: [branch, cities.join(", ")].filter(Boolean).join(" "),
-    cities,
-    targetMarkets: cities,
-    normalizedBranch: branch,
-    dailyTarget: Number(elements.planningDailyTargetInput.value) || 40,
-    startDate: formatLocalDate(new Date())
-  });
+  state.placesSaveBusy = true;
+  renderCampaigns();
+  try {
+    const branch = titleCase(elements.placesIndustryInput.value.trim());
+    const cities = parseList(elements.placesCityInput.value).map(titleCase);
+    const selectedCampaignId = elements.placesCampaignSelect?.value || "";
+    let campaign = state.data.campaigns.find((item) => item.id === selectedCampaignId);
 
-  const result = await window.desktopApp.importLeads({
-    leads: selectedLeads,
-    options: { listId: campaign.id }
-  });
-  elements.placesFeedback.textContent = `Lista sparad. Importerade ${result.imported}, dubletter ${result.duplicates}, skippade ${result.skipped}.`;
-  await refreshState();
-  render();
+    if (!campaign) {
+      campaign = await window.desktopApp.createCampaign({
+        name: elements.campaignNameInput.value.trim() || [branch, cities.join(", ")].filter(Boolean).join(" ") || "Ny lista",
+        sourceType: "google-places",
+        searchQuery: [branch, cities.join(", ")].filter(Boolean).join(" "),
+        cities,
+        targetMarkets: cities,
+        normalizedBranch: branch,
+        dailyTarget: Number(elements.planningDailyTargetInput.value) || 40,
+        startDate: formatLocalDate(new Date())
+      });
+      if (elements.placesCampaignSelect) {
+        elements.placesCampaignSelect.value = campaign.id;
+      }
+    }
+
+    const result = await window.desktopApp.importLeads({
+      leads: selectedLeads,
+      options: { listId: campaign.id }
+    });
+    const action = selectedCampaignId ? `Lade till i "${campaign.name}".` : `Lista "${campaign.name}" sparad.`;
+    elements.placesFeedback.textContent = `${action} Importerade ${result.imported}, redan i listan ${result.alreadyInList || 0}, dubletter i andra listor ${result.duplicates}, skippade ${result.skipped}.`;
+    await refreshState();
+  } catch (error) {
+    elements.placesFeedback.textContent = error.message;
+  } finally {
+    state.placesSaveBusy = false;
+    render();
+  }
 }
 
 async function importCsvAction(event) {
@@ -2979,6 +5055,12 @@ function daysAgo(days) {
   return date;
 }
 
+function daysFromNow(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
 function normalizeText(value) {
   return String(value || "")
     .trim()
@@ -3824,6 +5906,7 @@ function renderCampaignCatalog(campaigns) {
 }
 
 function renderCampaigns() {
+  const placesBusy = state.placesSearchBusy || state.placesSaveBusy;
   renderSimpleList(
     elements.placesQueryStats,
     getQueryPreviewCards(),
@@ -3839,7 +5922,7 @@ function renderCampaigns() {
       card.innerHTML = `
         <div class="row-header">
           <label class="checkbox-row">
-            <input type="checkbox" data-place-select="${escapeHtml(lead.id)}" ${selected ? "checked" : ""} />
+            <input type="checkbox" data-place-select="${escapeHtml(lead.id)}" ${selected ? "checked" : ""} ${placesBusy ? "disabled" : ""} />
             <strong>${escapeHtml(lead.companyName)}</strong>
           </label>
           <span class="status-badge">${escapeHtml(lead.targetMarketCity || lead.normalizedCity || lead.city || "Okänd stad")}</span>
@@ -3861,6 +5944,7 @@ function renderCampaigns() {
       removeButton.type = "button";
       removeButton.className = "ghost-button";
       removeButton.textContent = "Ignorera";
+      removeButton.disabled = placesBusy;
       removeButton.addEventListener("click", (event) => {
         event.stopPropagation();
         state.placesResults.splice(index, 1);
@@ -3875,7 +5959,23 @@ function renderCampaigns() {
     "Inga sökresultat ännu."
   );
 
-  elements.savePlacesCampaignButton.textContent = `Spara valda till lista (${getSelectedPlacesResults().length})`;
+  const selectedPlacesCount = getSelectedPlacesResults().length;
+  const targetCampaign = state.data.campaigns.find((campaign) => campaign.id === (elements.placesCampaignSelect?.value || ""));
+  elements.searchPlacesButton.disabled = placesBusy;
+  elements.selectAllPlacesButton.disabled = placesBusy || !state.placesResults.length;
+  elements.clearAllPlacesButton.disabled = placesBusy || !state.placesResults.length;
+  elements.savePlacesCampaignButton.disabled = placesBusy || !selectedPlacesCount;
+  elements.savePlacesCampaignButton.textContent = state.placesSaveBusy
+    ? "Sparar..."
+    : targetCampaign
+      ? `Lägg till valda i ${targetCampaign.name} (${selectedPlacesCount})`
+      : `Spara valda till ny lista (${selectedPlacesCount})`;
+  if (elements.placesCampaignSelect) {
+    elements.placesCampaignSelect.disabled = placesBusy;
+  }
+  if (elements.campaignNameInput) {
+    elements.campaignNameInput.disabled = placesBusy || Boolean(targetCampaign);
+  }
 
   const campaigns = getVisibleCampaigns();
   const visibleCampaignIds = getVisibleCampaignIds();
