@@ -1224,21 +1224,21 @@ function renderLegacyStatistics() {
     return;
   }
   const range = getStatisticsDateRange();
-  syncStatisticsControls(range);
+  syncLegacyStatisticsControls(range);
   const summary = buildStatisticsSummary(range);
 
   elements.statisticsFeedback.textContent = state.statistics.feedback || `Visar ${range.label}. Telavox räknas från sparade/synkade samtal i perioden.`;
   elements.statisticsStatusRange.textContent = state.statistics.campaignId ? "Vald lista, nuläge" : "Aktiva kunder just nu";
-  renderStatisticsKpis(summary);
-  renderStatisticsStatusBars(summary);
-  renderStatisticsInsights(summary);
-  renderStatisticsActivityBars(summary, range);
-  renderStatisticsSegments(summary);
-  renderStatisticsTelavoxBreakdown(summary);
-  renderStatisticsUnmatchedCalls(summary);
+  renderLegacyStatisticsKpis(summary);
+  renderLegacyStatisticsStatusBars(summary);
+  renderLegacyStatisticsInsights(summary);
+  renderLegacyStatisticsActivityBars(summary, range);
+  renderLegacyStatisticsSegments(summary);
+  renderLegacyStatisticsTelavoxBreakdown(summary);
+  renderLegacyStatisticsUnmatchedCalls(summary);
 }
 
-function syncStatisticsControls(range = getStatisticsDateRange()) {
+function syncLegacyStatisticsControls(range = getStatisticsDateRange()) {
   if (elements.statisticsCampaignSelect) {
     elements.statisticsCampaignSelect.value = state.statistics.campaignId || "";
   }
@@ -1570,7 +1570,7 @@ function buildStatisticsSummary(range) {
   };
 }
 
-function renderStatisticsKpis(summary) {
+function renderLegacyStatisticsKpis(summary) {
   const totalLeads = summary.activeLeads.length;
   const handled = summary.handlingLeadIds.size;
   const contacted = summary.contactedLeadIds.size;
@@ -1595,7 +1595,7 @@ function renderStatisticsKpis(summary) {
   `).join("");
 }
 
-function renderStatisticsStatusBars(summary) {
+function renderLegacyStatisticsStatusBars(summary) {
   const maxValue = Math.max(1, ...Object.values(summary.statusCounts));
   elements.statisticsStatusBars.innerHTML = LEAD_STATUSES.map((status) => {
     const count = summary.statusCounts[status] || 0;
@@ -1610,7 +1610,7 @@ function renderStatisticsStatusBars(summary) {
   }).join("");
 }
 
-function renderStatisticsInsights(summary) {
+function renderLegacyStatisticsInsights(summary) {
   const contacted = summary.contactedLeadIds.size;
   const sales = summary.salesLeadIds.size;
   const totalTelavox = summary.telavoxCalls.length;
@@ -1660,7 +1660,7 @@ function renderStatisticsInsights(summary) {
   `).join("");
 }
 
-function renderStatisticsActivityBars(summary, range) {
+function renderLegacyStatisticsActivityBars(summary, range) {
   const buckets = buildStatisticsBuckets(summary, range);
   const metric = getStatisticsChartMetric();
   const series = getStatisticsChartSeries(metric);
@@ -1719,7 +1719,7 @@ function getStatisticsBucketMetricValue(bucket, metricValue) {
   return Number(value) || 0;
 }
 
-function renderStatisticsSegments(summary) {
+function renderLegacyStatisticsSegments(summary) {
   const segments = new Map();
   const ensureSegment = (branch) => {
     const key = branch || "Okategoriserat";
@@ -1810,7 +1810,7 @@ function formatStatisticsTopCities(segment) {
   return cities.length ? cities.join(" · ") : "Inga samtal";
 }
 
-function renderStatisticsTelavoxBreakdown(summary) {
+function renderLegacyStatisticsTelavoxBreakdown(summary) {
   const total = summary.telavoxCalls.length;
   const totalDuration = summary.totalTelavoxDuration;
   const avgDuration = total ? Math.round(totalDuration / total) : 0;
@@ -1843,7 +1843,7 @@ function renderStatisticsTelavoxBreakdown(summary) {
   `;
 }
 
-function renderStatisticsUnmatchedCalls(summary) {
+function renderLegacyStatisticsUnmatchedCalls(summary) {
   const rows = [...summary.softMatchedTelavoxCalls]
     .sort((left, right) => new Date(right.happenedAt) - new Date(left.happenedAt))
     .slice(0, 12);
@@ -2029,7 +2029,7 @@ function getStatisticsBucketLabel(date, groupBy) {
   return new Intl.DateTimeFormat("sv-SE", { weekday: "short", day: "numeric" }).format(date);
 }
 
-async function syncStatisticsTelavox() {
+async function syncLegacyStatisticsTelavox() {
   if (state.statistics.syncBusy) {
     return;
   }
