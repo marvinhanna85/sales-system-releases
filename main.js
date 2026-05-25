@@ -1360,6 +1360,7 @@ async function downloadUpdate() {
 
 function registerIpc() {
   ipcMain.handle("app:get-state", () => store.getState());
+  ipcMain.handle("statistics:get", (_event, payload) => store.getStatistics(payload));
   ipcMain.handle("app:get-version", () => app.getVersion());
   ipcMain.handle("app:save-settings", (_event, payload) => store.saveSettings(payload));
   ipcMain.handle("campaigns:create", (_event, payload) => store.createCampaign(payload));
@@ -1370,6 +1371,7 @@ function registerIpc() {
   ipcMain.handle("leads:update", (_event, payload) => store.updateLead(payload.leadId, payload.patch));
   ipcMain.handle("leads:action", (_event, payload) => store.applyLeadAction(payload));
   ipcMain.handle("leads:log-event", (_event, payload) => store.addTimelineEvent(payload));
+  ipcMain.handle("calls:create-intent", (_event, payload) => store.createCallIntent(payload));
   ipcMain.handle("leads:next", (_event, payload) => store.getNextLead(payload));
   ipcMain.handle("leads:delete", (_event, payload) => store.softDeleteLead(payload.leadId));
   ipcMain.handle("leads:restore", (_event, payload) => store.restoreLead(payload.leadId));
@@ -1387,7 +1389,15 @@ function registerIpc() {
   });
   ipcMain.handle("schedule:plan", (_event, payload) => store.planSchedule(payload));
   ipcMain.handle("schedule:clear", (_event, payload) => store.clearSchedule(payload));
-  ipcMain.handle("places:search", async (_event, payload) => searchPlaces(payload));
+  ipcMain.handle("places:search", async (event, payload = {}) => {
+    const searchId = payload.searchId || "";
+    const sendProgress = (progress) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send("places:progress", { searchId, ...progress });
+      }
+    };
+    return searchPlaces({ ...payload, onProgress: sendProgress });
+  });
   ipcMain.handle("ads:research-customer", async (_event, payload) => researchAdStudioCustomer(payload));
   ipcMain.handle("ads:save-asset", async (_event, payload) => saveAdStudioAsset(payload));
   ipcMain.handle("ads:get-asset-data-url", async (_event, payload) => getAdStudioAssetDataUrl(payload));
@@ -1395,6 +1405,8 @@ function registerIpc() {
   ipcMain.handle("ads:generate-image", async (_event, payload) => generateAdStudioImage(payload));
   ipcMain.handle("invoices:create-pdf", (_event, payload) => createInvoicePdf(payload));
   ipcMain.handle("telavox:sync-lead", (_event, payload) => store.syncTelavoxLeadCalls(payload));
+  ipcMain.handle("telavox:sync-period", (_event, payload) => store.syncTelavoxPeriodCalls(payload));
+  ipcMain.handle("telavox:resolve-call", (_event, payload) => store.resolveTelavoxCall(payload));
   ipcMain.handle("telavox:download-recording", (_event, payload) => store.downloadTelavoxRecording(payload));
   ipcMain.handle("link:open-external", (_event, targetUrl) => {
     if (!targetUrl) {

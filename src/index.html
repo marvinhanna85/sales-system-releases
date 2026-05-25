@@ -20,6 +20,7 @@
           <button class="nav-button" data-view="work">Arbetsläge</button>
           <button class="nav-button" data-view="customers">Kunder</button>
           <button class="nav-button" data-view="campaigns">Listor / kampanjer</button>
+          <button class="nav-button" data-view="statistics">Statistik</button>
           <button class="nav-button" data-view="ads">Annonsstudio</button>
           <button class="nav-button" data-view="planning">Planering</button>
           <button class="nav-button" data-view="reminders">Påminnelser</button>
@@ -351,17 +352,27 @@
                   <span>API-nyckel</span>
                   <input id="apiKeyInput" class="input" type="password" placeholder="Google Maps Platform API key" />
                 </label>
+                <div class="field">
+                  <span>Bransch(er)</span>
+                  <div class="input-action-row">
+                    <input id="placesIndustryInput" class="input" type="text" placeholder="guldsmed, frisör" />
+                    <button id="generatePlaceQuerySuggestionsButton" class="ghost-button" type="button">Generera queryförslag</button>
+                  </div>
+                </div>
                 <label class="field">
-                  <span>Bransch</span>
-                  <input id="placesIndustryInput" class="input" type="text" placeholder="byggare" />
-                </label>
-                <label class="field">
-                  <span>Målområde / stad</span>
-                  <input id="placesCityInput" class="input" type="text" placeholder="Kalmar, Växjö, Karlskrona" />
+                  <span>Målområden / städer</span>
+                  <textarea id="placesCityInput" class="input" rows="3" placeholder="Gävle, Uppsala, Västerås"></textarea>
                 </label>
                 <label class="field">
                   <span>Max träffar per query</span>
                   <input id="placesMaxResultsInput" class="input" type="number" min="1" max="60" value="60" />
+                </label>
+                <label class="field places-mode-field">
+                  <span>Listläge</span>
+                  <span class="checkbox-row">
+                    <input id="placesSeparateListsToggle" type="checkbox" />
+                    <span>Skapa separata listor per bransch och stad</span>
+                  </span>
                 </label>
                 <label class="field">
                   <span>Spara till lista</span>
@@ -373,6 +384,17 @@
                   <span>Namn på ny lista</span>
                   <input id="campaignNameInput" class="input" type="text" placeholder="Byggare i Kalmar" />
                 </label>
+                <div id="placesQuerySuggestionPanel" class="query-suggestion-panel field-span" hidden>
+                  <div class="query-suggestion-head">
+                    <strong>Queryförslag</strong>
+                    <span id="placesQuerySuggestionSummary" class="meta-line"></span>
+                  </div>
+                  <div id="placesQuerySuggestionList" class="query-suggestion-list"></div>
+                  <div class="query-suggestion-actions">
+                    <button id="applyPlaceQuerySuggestionsButton" class="secondary-button" type="button">Lägg till valda</button>
+                    <button id="clearPlaceQuerySuggestionsButton" class="ghost-button" type="button">Stäng</button>
+                  </div>
+                </div>
               </div>
 
               <div class="inline-actions">
@@ -383,6 +405,15 @@
               </div>
 
               <p id="placesFeedback" class="feedback">Sökningen visar queries, råa träffar, unika leads, dubletter och bortfiltrerade resultat.</p>
+              <div id="placesProgress" class="progress-panel" hidden>
+                <div class="progress-row">
+                  <span id="placesProgressText">Förbereder sökning...</span>
+                  <strong id="placesProgressPercent">0%</strong>
+                </div>
+                <div class="progress-track" aria-hidden="true">
+                  <div id="placesProgressBar" class="progress-fill"></div>
+                </div>
+              </div>
               <div id="placesQueryStats" class="stack-list compact-list"></div>
               <div id="placesResultsList" class="stack-list"></div>
             </section>
@@ -452,6 +483,138 @@
             </div>
             <div id="campaignsCatalogList" class="catalog-list"></div>
             <div id="campaignCards" class="card-grid"></div>
+          </section>
+        </section>
+
+        <section id="statisticsView" class="view">
+          <section class="statistics-shell">
+            <div class="statistics-hero panel">
+              <div>
+                <p class="section-label">Statistik</p>
+                <h3>Outbound decision engine</h3>
+              </div>
+              <div class="statistics-controls">
+                <select id="statisticsCampaignSelect" class="input compact-input">
+                  <option value="">Alla listor</option>
+                </select>
+                <select id="statisticsRangePreset" class="input compact-input">
+                  <option value="today">Idag</option>
+                  <option value="week">Den här veckan</option>
+                  <option value="month">Den här månaden</option>
+                  <option value="last7">Senaste 7 dagarna</option>
+                  <option value="last30">Senaste 30 dagarna</option>
+                  <option value="last90">Senaste 90 dagarna</option>
+                  <option value="custom">Eget datumintervall</option>
+                </select>
+                <select id="statisticsGroupBy" class="input compact-input">
+                  <option value="day">Daglig vy</option>
+                  <option value="week">Veckovy</option>
+                  <option value="month">Månadsvy</option>
+                </select>
+                <select id="statisticsAttributionMode" class="input compact-input">
+                  <option value="hard_inferred">Hard + inferred</option>
+                  <option value="hard">Hard only</option>
+                  <option value="raw">Raw all</option>
+                </select>
+                <input id="statisticsFromDate" class="input compact-input" type="date" />
+                <input id="statisticsToDate" class="input compact-input" type="date" />
+                <label class="statistics-toggle">
+                  <input id="statisticsHideEmptyBuckets" type="checkbox" checked />
+                  <span>Dölj tomma</span>
+                </label>
+                <button id="statisticsSyncTelavoxButton" class="secondary-button" type="button">Synka Telavox</button>
+              </div>
+            </div>
+
+            <p id="statisticsFeedback" class="feedback statistics-feedback">Statistik laddas från CRM och sparade Telavox-samtal.</p>
+
+            <div id="statisticsKpis" class="statistics-kpis"></div>
+
+            <div class="statistics-layout statistics-layout-secondary">
+              <section class="panel statistics-panel">
+                <div class="section-header">
+                  <div>
+                    <p class="section-label">Datatäckning</p>
+                    <h3>Telavox sync coverage</h3>
+                  </div>
+                  <span id="statisticsTelavoxSummary" class="muted-text">Ingen synk ännu</span>
+                </div>
+                <div id="statisticsCoverage" class="statistics-coverage"></div>
+              </section>
+
+              <section class="panel statistics-panel">
+                <div class="section-header">
+                  <div>
+                    <p class="section-label">Nyckeltal</p>
+                    <h3>Vad krävs för ett sälj?</h3>
+                  </div>
+                  <span class="muted-text">Raw, säljdial, connected och qualified</span>
+                </div>
+                <div id="statisticsInsights" class="statistics-insights"></div>
+              </section>
+            </div>
+
+            <section class="panel statistics-panel">
+              <div class="section-header">
+                <div>
+                  <p class="section-label">Grafbyggare</p>
+                  <h3>Serier per vald period</h3>
+                </div>
+                <span id="statisticsActivityLegend" class="muted-text">Telavox + CRM + resultat</span>
+              </div>
+              <div id="statisticsSeriesPicker" class="statistics-series-picker"></div>
+              <div id="statisticsActivityBars" class="statistics-activity-bars"></div>
+            </section>
+
+            <section class="panel statistics-panel">
+              <div class="section-header">
+                <div>
+                  <p class="section-label">Segmentranking</p>
+                  <h3>Bransch, stad och lista</h3>
+                </div>
+                <div class="statistics-panel-tools">
+                  <select id="statisticsSegmentSort" class="input compact-input">
+                    <option value="priorityScore">Priority score</option>
+                    <option value="expectedKrPerDial">Expected kr/dial</option>
+                    <option value="revenuePerDial">Revenue per dial</option>
+                    <option value="revenue">Revenue</option>
+                    <option value="salesCount">Sälj</option>
+                    <option value="dialsPerSale">Dials/sälj</option>
+                    <option value="availableLeads">Leads kvar</option>
+                    <option value="dataQuality">Datakvalitet</option>
+                    <option value="hardDataShare">Hard data share</option>
+                  </select>
+                </div>
+              </div>
+              <div id="statisticsSegmentsTable" class="statistics-table-wrap"></div>
+            </section>
+
+            <section class="panel statistics-panel">
+              <div class="section-header">
+                <div>
+                  <p class="section-label">Telavox totalt</p>
+                  <h3>Alla samtal i vald period</h3>
+                </div>
+                <div class="statistics-panel-tools">
+                  <button id="statisticsExportRawButton" class="secondary-button" type="button">Raw JSON</button>
+                  <button id="statisticsExportAttributedButton" class="secondary-button" type="button">Attributed JSON</button>
+                  <button id="statisticsExportSegmentsButton" class="secondary-button" type="button">Segment CSV</button>
+                  <button id="statisticsExportMetricsButton" class="secondary-button" type="button">Metrics JSON</button>
+                </div>
+              </div>
+              <div id="statisticsTelavoxBreakdown" class="statistics-telavox-grid"></div>
+            </section>
+
+            <section class="panel statistics-panel">
+              <div class="section-header">
+                <div>
+                  <p class="section-label">Omatchade nummer att lösa</p>
+                  <h3>Hard data först, antaganden tydligt märkta</h3>
+                </div>
+                <span class="muted-text">Koppla, lägg till extra nummer, skapa kund eller ignorera</span>
+              </div>
+              <div id="statisticsUnmatchedCalls" class="statistics-table-wrap"></div>
+            </section>
           </section>
         </section>
 
@@ -962,6 +1125,10 @@
             <input id="editPhoneInput" class="input" type="text" />
           </label>
           <label class="field">
+            <span>Extra telefoner</span>
+            <input id="editExtraPhonesInput" class="input" type="text" placeholder="Separera med komma" />
+          </label>
+          <label class="field">
             <span>Kontaktperson</span>
             <input id="editContactInput" class="input" type="text" />
           </label>
@@ -987,6 +1154,10 @@
             <select id="editCampaignSelect" class="input">
               <option value="">Ingen lista</option>
             </select>
+          </label>
+          <label class="field">
+            <span>Ordervärde / sale value</span>
+            <input id="editSaleValueInput" class="input" type="number" min="0" step="100" />
           </label>
         </div>
 

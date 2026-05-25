@@ -2,90 +2,42 @@ const BRANCH_TAXONOMY = [
   {
     id: "byggare",
     label: "Byggare",
-    aliases: ["bygg", "byggare", "byggfirma", "byggföretag", "snickare", "entreprenad", "renovering", "byggservice"],
-    queryTemplates: [
-      "byggfirma {city}",
-      "byggföretag {city}",
-      "snickare {city}",
-      "entreprenad {city}",
-      "renovering {city}",
-      "byggservice {city}"
-    ]
+    aliases: ["bygg", "byggare", "byggfirma", "byggföretag", "snickare", "entreprenad", "renovering", "byggservice"]
   },
   {
     id: "elektriker",
     label: "Elektriker",
-    aliases: ["elektriker", "elinstallatör", "elinstallation", "elfirma"],
-    queryTemplates: [
-      "elektriker {city}",
-      "elfirma {city}",
-      "elinstallation {city}",
-      "elinstallatör {city}"
-    ]
+    aliases: ["elektriker", "elinstallatör", "elinstallation", "elfirma"]
   },
   {
     id: "restauranger",
     label: "Restauranger",
-    aliases: ["restaurang", "restauranger", "krog", "bistro", "lunchrestaurang"],
-    queryTemplates: [
-      "restaurang {city}",
-      "krog {city}",
-      "bistro {city}",
-      "lunchrestaurang {city}"
-    ]
+    aliases: ["restaurang", "restauranger", "krog", "bistro", "lunchrestaurang"]
   },
   {
     id: "blomsterhandlare",
     label: "Blomsterhandlare",
-    aliases: ["blomsterhandlare", "florist", "blombutik", "blomsterhandel"],
-    queryTemplates: [
-      "blomsterhandlare {city}",
-      "florist {city}",
-      "blombutik {city}",
-      "blomsterhandel {city}"
-    ]
+    aliases: ["blomsterhandlare", "florist", "blombutik", "blomsterhandel"]
   },
   {
     id: "frisorer",
     label: "Frisörer",
-    aliases: ["frisör", "frisörer", "frisörsalong", "hårsalong", "barberare"],
-    queryTemplates: [
-      "frisör {city}",
-      "frisörsalong {city}",
-      "hårsalong {city}",
-      "barberare {city}"
-    ]
+    aliases: ["frisör", "frisörer", "frisörsalong", "hårsalong", "barberare"]
   },
   {
     id: "malare",
     label: "Målare",
-    aliases: ["målare", "måleri", "målerifirma"],
-    queryTemplates: [
-      "målare {city}",
-      "måleri {city}",
-      "målerifirma {city}"
-    ]
+    aliases: ["målare", "måleri", "målerifirma"]
   },
   {
     id: "bilverkstad",
     label: "Bilverkstad",
-    aliases: ["bilverkstad", "verkstad", "bilservice", "mekaniker"],
-    queryTemplates: [
-      "bilverkstad {city}",
-      "bilservice {city}",
-      "verkstad {city}",
-      "mekaniker {city}"
-    ]
+    aliases: ["bilverkstad", "verkstad", "bilservice", "mekaniker"]
   },
   {
     id: "konsulter",
     label: "Konsulter",
-    aliases: ["konsult", "konsulter", "konsultfirma", "rådgivning"],
-    queryTemplates: [
-      "konsult {city}",
-      "konsultfirma {city}",
-      "rådgivning {city}"
-    ]
+    aliases: ["konsult", "konsulter", "konsultfirma", "rådgivning"]
   }
 ];
 
@@ -119,17 +71,31 @@ function inferBranchLabel(input) {
   return fuzzy?.label ?? "";
 }
 
+function buildGenericQueryTemplates(label) {
+  const term = String(label ?? "").trim();
+  if (!term) {
+    return [];
+  }
+
+  return [`${term} {city}`];
+}
+
 function buildQueriesForBranch(label, city) {
-  const branch = findBranchDefinition(label) ?? { label: label.trim(), queryTemplates: [`${label} {city}`] };
-  return branch.queryTemplates
-    .map((template) => template.replace("{city}", city).trim())
+  const term = String(label ?? "").trim();
+  const location = String(city ?? "").trim();
+  if (!term || !location) {
+    return [];
+  }
+
+  return [`${term} ${location}`]
     .filter(Boolean)
-    .filter((item, index, list) => list.indexOf(item) === index);
+    .filter((item, index, list) => list.findIndex((candidate) => normalizeText(candidate) === normalizeText(item)) === index);
 }
 
 module.exports = {
   BRANCH_TAXONOMY,
   buildQueriesForBranch,
+  buildGenericQueryTemplates,
   findBranchDefinition,
   inferBranchLabel,
   normalizeText

@@ -10,17 +10,46 @@ const LEAD_STATUSES = [
 ];
 const DASHBOARD_UPCOMING_WINDOW_MINUTES = 60;
 const DASHBOARD_UPCOMING_LIMIT = 3;
-
-const BRANCH_QUERY_TEMPLATES = {
-  byggare: ["byggfirma {city}", "byggföretag {city}", "snickare {city}", "entreprenad {city}", "renovering {city}", "byggservice {city}"],
-  elektriker: ["elektriker {city}", "elfirma {city}", "elinstallation {city}", "elinstallatör {city}"],
-  restauranger: ["restaurang {city}", "krog {city}", "bistro {city}", "lunchrestaurang {city}"],
-  blomsterhandlare: ["blomsterhandlare {city}", "florist {city}", "blombutik {city}", "blomsterhandel {city}"],
-  frisörer: ["frisör {city}", "frisörsalong {city}", "hårsalong {city}", "barberare {city}"],
-  målare: ["målare {city}", "måleri {city}", "målerifirma {city}"],
-  bilverkstad: ["bilverkstad {city}", "bilservice {city}", "verkstad {city}", "mekaniker {city}"],
-  konsulter: ["konsult {city}", "konsultfirma {city}", "rådgivning {city}"]
+const MAX_PLACES_API_CALLS_PER_SEARCH = 500;
+const STATISTICS_HANDLING_LOG_TYPES = new Set(["activity", "call", "status", "note", "reminder-complete", "update", "telavox-sync"]);
+const STATISTICS_STATUS_COLORS = {
+  Ny: "#2563eb",
+  "Ej svar": "#64748b",
+  "Ringa igen": "#d97706",
+  "Skicka mail": "#0f9f9a",
+  "Mail skickat": "#0891b2",
+  "Återkoppling": "#4f46e5",
+  Closed: "#059669",
+  "Inte intresserad": "#dc2626"
 };
+const STATISTICS_CALL_COLORS = {
+  outgoing: "#2563eb",
+  incoming: "#059669",
+  missed: "#dc2626",
+  sales: "#0f9f9a",
+  matchedCalls: "#4f46e5",
+  unmatchedCalls: "#ef4444",
+  inferredCalls: "#f59e0b",
+  directSalesCalls: "#10b981",
+  handled: "#0f9f9a",
+  contacted: "#d97706",
+  totalCalls: "#2563eb"
+};
+const STATISTICS_CHART_STATUS_PREFIX = "status:";
+const STATISTICS_CHART_BASE_METRICS = [
+  { value: "totalCalls", label: "Telavox totalt", color: "#2563eb" },
+  { value: "callMix", label: "Samtalsmix", color: "#2563eb" },
+  { value: "outgoing", label: "Utgående samtal", color: "#2563eb" },
+  { value: "incoming", label: "Inkommande samtal", color: "#059669" },
+  { value: "missed", label: "Missade samtal", color: "#dc2626" },
+  { value: "matchedCalls", label: "CRM-matchade samtal", color: "#4f46e5" },
+  { value: "unmatchedCalls", label: "Omatchade samtal", color: "#ef4444" },
+  { value: "inferredCalls", label: "Antagna branscher", color: "#f59e0b" },
+  { value: "directSalesCalls", label: "Direkta säljsamtal", color: "#10b981" },
+  { value: "handled", label: "Hanterade kunder", color: "#0f9f9a" },
+  { value: "contacted", label: "Kontaktade kunder", color: "#d97706" },
+  { value: "sales", label: "Sälj", color: "#059669" }
+];
 
 const MANUAL_BRANCH_TAXONOMY = [
   { label: "Byggare", aliases: ["bygg", "byggare", "byggfirma", "byggföretag", "snickare", "entreprenad", "renovering", "byggservice"] },
@@ -32,6 +61,17 @@ const MANUAL_BRANCH_TAXONOMY = [
   { label: "Bilverkstad", aliases: ["bilverkstad", "verkstad", "bilservice", "mekaniker"] },
   { label: "Konsulter", aliases: ["konsult", "konsulter", "konsultfirma", "rådgivning"] }
 ];
+
+const QUERY_SUGGESTION_GROUPS = [
+  ["glassbutik", "gelateria", "gelato", "glassbar"],
+  ["vvs", "rörmokare", "rörfirma", "vvs installatör", "vvs service"],
+  ["poolfirma", "poolbyggare", "poolservice", "poolinstallation", "poolbutik"],
+  ["plattsättare", "kakelsättare", "kakel och klinker", "kakelarbeten", "badrumsrenovering"],
+  ["webbyrå", "webbdesign", "digitalbyrå", "reklambyrå"],
+  ["optiker", "optik", "glasögonbutik", "synundersökning"]
+];
+
+const QUERY_SUGGESTION_SUFFIXES = ["butik", "firma", "företag", "service", "verkstad", "salong", "studio", "byrå", "mottagning", "center", "centrum"];
 
 const state = {
   data: {
@@ -80,6 +120,9 @@ const state = {
   placesResults: [],
   placesMeta: null,
   placesSelection: {},
+  placesProgress: null,
+  placesQuerySuggestions: [],
+  placesQuerySuggestionSelection: {},
   placesSearchBusy: false,
   placesSaveBusy: false,
   reminderViewMode: "all",
@@ -96,6 +139,23 @@ const state = {
     windSpeed: "",
     code: null,
     error: ""
+  },
+  statistics: {
+    rangePreset: "last30",
+    groupBy: "week",
+    chartMetric: "totalCalls",
+    selectedSeries: ["rawTelavoxCalls", "outboundSalesDials", "connectedSalesCalls", "sales", "revenue"],
+    attributionMode: "hard_inferred",
+    hideEmptyBuckets: true,
+    segmentSort: "priorityScore",
+    pausedSegments: new Set(),
+    fromDate: formatLocalDate(daysAgo(29)),
+    toDate: formatLocalDate(new Date()),
+    campaignId: "",
+    syncBusy: false,
+    feedback: "",
+    summary: null,
+    renderToken: 0
   },
   planningData: null,
   selectedPlanningDate: "",
@@ -136,6 +196,7 @@ const elements = {
     work: document.querySelector("#workView"),
     customers: document.querySelector("#customersView"),
     campaigns: document.querySelector("#campaignsView"),
+    statistics: document.querySelector("#statisticsView"),
     ads: document.querySelector("#adsView"),
     planning: document.querySelector("#planningView"),
     reminders: document.querySelector("#remindersView"),
@@ -243,13 +304,24 @@ const elements = {
   placesIndustryInput: document.querySelector("#placesIndustryInput"),
   placesCityInput: document.querySelector("#placesCityInput"),
   placesMaxResultsInput: document.querySelector("#placesMaxResultsInput"),
+  placesSeparateListsToggle: document.querySelector("#placesSeparateListsToggle"),
   placesCampaignSelect: document.querySelector("#placesCampaignSelect"),
   campaignNameInput: document.querySelector("#campaignNameInput"),
+  generatePlaceQuerySuggestionsButton: document.querySelector("#generatePlaceQuerySuggestionsButton"),
+  placesQuerySuggestionPanel: document.querySelector("#placesQuerySuggestionPanel"),
+  placesQuerySuggestionSummary: document.querySelector("#placesQuerySuggestionSummary"),
+  placesQuerySuggestionList: document.querySelector("#placesQuerySuggestionList"),
+  applyPlaceQuerySuggestionsButton: document.querySelector("#applyPlaceQuerySuggestionsButton"),
+  clearPlaceQuerySuggestionsButton: document.querySelector("#clearPlaceQuerySuggestionsButton"),
   searchPlacesButton: document.querySelector("#searchPlacesButton"),
   selectAllPlacesButton: document.querySelector("#selectAllPlacesButton"),
   clearAllPlacesButton: document.querySelector("#clearAllPlacesButton"),
   savePlacesCampaignButton: document.querySelector("#savePlacesCampaignButton"),
   placesFeedback: document.querySelector("#placesFeedback"),
+  placesProgress: document.querySelector("#placesProgress"),
+  placesProgressText: document.querySelector("#placesProgressText"),
+  placesProgressPercent: document.querySelector("#placesProgressPercent"),
+  placesProgressBar: document.querySelector("#placesProgressBar"),
   placesQueryStats: document.querySelector("#placesQueryStats"),
   placesResultsList: document.querySelector("#placesResultsList"),
   csvCampaignSelect: document.querySelector("#csvCampaignSelect"),
@@ -268,6 +340,34 @@ const elements = {
   campaignBulkDeleteButton: document.querySelector("#campaignBulkDeleteButton"),
   campaignsCatalogList: document.querySelector("#campaignsCatalogList"),
   campaignCards: document.querySelector("#campaignCards"),
+  statisticsCampaignSelect: document.querySelector("#statisticsCampaignSelect"),
+  statisticsRangePreset: document.querySelector("#statisticsRangePreset"),
+  statisticsGroupBy: document.querySelector("#statisticsGroupBy"),
+  statisticsAttributionMode: document.querySelector("#statisticsAttributionMode"),
+  statisticsHideEmptyBuckets: document.querySelector("#statisticsHideEmptyBuckets"),
+  statisticsChartMetric: document.querySelector("#statisticsChartMetric"),
+  statisticsChartMetricButtons: document.querySelector("#statisticsChartMetricButtons"),
+  statisticsFromDate: document.querySelector("#statisticsFromDate"),
+  statisticsToDate: document.querySelector("#statisticsToDate"),
+  statisticsSyncTelavoxButton: document.querySelector("#statisticsSyncTelavoxButton"),
+  statisticsFeedback: document.querySelector("#statisticsFeedback"),
+  statisticsKpis: document.querySelector("#statisticsKpis"),
+  statisticsStatusRange: document.querySelector("#statisticsStatusRange"),
+  statisticsStatusBars: document.querySelector("#statisticsStatusBars"),
+  statisticsInsights: document.querySelector("#statisticsInsights"),
+  statisticsActivityLegend: document.querySelector("#statisticsActivityLegend"),
+  statisticsCoverage: document.querySelector("#statisticsCoverage"),
+  statisticsSeriesPicker: document.querySelector("#statisticsSeriesPicker"),
+  statisticsActivityBars: document.querySelector("#statisticsActivityBars"),
+  statisticsSegmentsTable: document.querySelector("#statisticsSegmentsTable"),
+  statisticsSegmentSort: document.querySelector("#statisticsSegmentSort"),
+  statisticsTelavoxSummary: document.querySelector("#statisticsTelavoxSummary"),
+  statisticsTelavoxBreakdown: document.querySelector("#statisticsTelavoxBreakdown"),
+  statisticsUnmatchedCalls: document.querySelector("#statisticsUnmatchedCalls"),
+  statisticsExportRawButton: document.querySelector("#statisticsExportRawButton"),
+  statisticsExportAttributedButton: document.querySelector("#statisticsExportAttributedButton"),
+  statisticsExportSegmentsButton: document.querySelector("#statisticsExportSegmentsButton"),
+  statisticsExportMetricsButton: document.querySelector("#statisticsExportMetricsButton"),
   adsCustomerSelect: document.querySelector("#adsCustomerSelect"),
   adsOpenAiKeyInput: document.querySelector("#adsOpenAiKeyInput"),
   adsBrandInput: document.querySelector("#adsBrandInput"),
@@ -366,6 +466,7 @@ const elements = {
   saveEditLeadButton: document.querySelector("#saveEditLeadButton"),
   editCompanyNameInput: document.querySelector("#editCompanyNameInput"),
   editPhoneInput: document.querySelector("#editPhoneInput"),
+  editExtraPhonesInput: document.querySelector("#editExtraPhonesInput"),
   editContactInput: document.querySelector("#editContactInput"),
   editWebsiteInput: document.querySelector("#editWebsiteInput"),
   editAddressInput: document.querySelector("#editAddressInput"),
@@ -373,6 +474,7 @@ const elements = {
   editBranchInput: document.querySelector("#editBranchInput"),
   editBranchSuggestions: document.querySelector("#editBranchSuggestions"),
   editCampaignSelect: document.querySelector("#editCampaignSelect"),
+  editSaleValueInput: document.querySelector("#editSaleValueInput"),
   editLeadFeedback: document.querySelector("#editLeadFeedback")
 };
 
@@ -402,6 +504,14 @@ async function init() {
 }
 
 function bindEvents() {
+  window.desktopApp?.onPlacesProgress?.((progress) => {
+    if (state.placesProgress?.searchId && progress.searchId && progress.searchId !== state.placesProgress.searchId) {
+      return;
+    }
+    state.placesProgress = { ...(state.placesProgress || {}), ...progress };
+    renderPlacesProgress();
+  });
+
   elements.navButtons.forEach((button) => {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -637,6 +747,75 @@ function bindEvents() {
   });
   elements.campaignBulkDeleteButton.addEventListener("click", bulkDeleteSelectedCampaigns);
 
+  elements.statisticsCampaignSelect?.addEventListener("change", (event) => {
+    state.statistics.campaignId = event.target.value;
+    renderStatistics();
+  });
+  elements.statisticsRangePreset?.addEventListener("change", (event) => {
+    state.statistics.rangePreset = event.target.value;
+    applyStatisticsPreset();
+    renderStatistics();
+  });
+  elements.statisticsGroupBy?.addEventListener("change", (event) => {
+    state.statistics.groupBy = event.target.value;
+    renderStatistics();
+  });
+  elements.statisticsAttributionMode?.addEventListener("change", (event) => {
+    state.statistics.attributionMode = event.target.value || "hard_inferred";
+    renderStatistics();
+  });
+  elements.statisticsHideEmptyBuckets?.addEventListener("change", (event) => {
+    state.statistics.hideEmptyBuckets = event.target.checked;
+    renderStatistics();
+  });
+  elements.statisticsChartMetric?.addEventListener("change", (event) => {
+    state.statistics.chartMetric = event.target.value || "totalCalls";
+    renderStatistics();
+  });
+  elements.statisticsChartMetricButtons?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-statistics-chart-metric]");
+    if (!button) {
+      return;
+    }
+    state.statistics.chartMetric = button.dataset.statisticsChartMetric || "totalCalls";
+    renderStatistics();
+  });
+  elements.statisticsFromDate?.addEventListener("change", (event) => {
+    state.statistics.rangePreset = "custom";
+    state.statistics.fromDate = event.target.value || state.statistics.fromDate;
+    renderStatistics();
+  });
+  elements.statisticsToDate?.addEventListener("change", (event) => {
+    state.statistics.rangePreset = "custom";
+    state.statistics.toDate = event.target.value || state.statistics.toDate;
+    renderStatistics();
+  });
+  elements.statisticsSyncTelavoxButton?.addEventListener("click", syncStatisticsTelavox);
+  elements.statisticsSeriesPicker?.addEventListener("change", (event) => {
+    const checkbox = event.target.closest("[data-statistics-series]");
+    if (!checkbox) {
+      return;
+    }
+    const selected = new Set(state.statistics.selectedSeries);
+    if (checkbox.checked) {
+      selected.add(checkbox.dataset.statisticsSeries);
+    } else {
+      selected.delete(checkbox.dataset.statisticsSeries);
+    }
+    state.statistics.selectedSeries = [...selected];
+    renderStatisticsFromSummary(state.statistics.summary);
+  });
+  elements.statisticsSegmentSort?.addEventListener("change", (event) => {
+    state.statistics.segmentSort = event.target.value || "priorityScore";
+    renderStatisticsFromSummary(state.statistics.summary);
+  });
+  elements.statisticsSegmentsTable?.addEventListener("click", handleStatisticsSegmentAction);
+  elements.statisticsUnmatchedCalls?.addEventListener("click", handleStatisticsUnmatchedAction);
+  elements.statisticsExportRawButton?.addEventListener("click", () => exportStatisticsDebug("raw"));
+  elements.statisticsExportAttributedButton?.addEventListener("click", () => exportStatisticsDebug("attributed"));
+  elements.statisticsExportSegmentsButton?.addEventListener("click", () => exportStatisticsDebug("segments"));
+  elements.statisticsExportMetricsButton?.addEventListener("click", () => exportStatisticsDebug("metrics"));
+
   elements.adsCustomerSelect?.addEventListener("change", handleAdStudioCustomerChange);
   [
     ["brand", elements.adsBrandInput],
@@ -673,7 +852,18 @@ function bindEvents() {
   elements.adsSendReviewButton?.addEventListener("click", markAdStudioForReview);
 
   elements.searchPlacesButton.addEventListener("click", searchPlacesAction);
+  elements.generatePlaceQuerySuggestionsButton?.addEventListener("click", generatePlaceQuerySuggestionsAction);
+  elements.applyPlaceQuerySuggestionsButton?.addEventListener("click", applySelectedPlaceQuerySuggestions);
+  elements.clearPlaceQuerySuggestionsButton?.addEventListener("click", clearPlaceQuerySuggestions);
+  elements.placesIndustryInput?.addEventListener("input", () => {
+    if (state.placesQuerySuggestions.length) {
+      state.placesQuerySuggestions = [];
+      state.placesQuerySuggestionSelection = {};
+      renderCampaigns();
+    }
+  });
   elements.placesCampaignSelect?.addEventListener("change", renderCampaigns);
+  elements.placesSeparateListsToggle?.addEventListener("change", renderCampaigns);
   elements.selectAllPlacesButton.addEventListener("click", () => {
     state.placesSelection = Object.fromEntries(state.placesResults.map((lead) => [lead.id, true]));
     renderCampaigns();
@@ -840,6 +1030,7 @@ function render() {
       work: "Arbetsläge",
       customers: "Kunder",
       campaigns: "Listor / kampanjer",
+      statistics: "Statistik",
       ads: "Annonsstudio",
       planning: "Planering",
       reminders: "Påminnelser",
@@ -860,6 +1051,7 @@ function render() {
       work: renderWorkMode,
       customers: renderCustomers,
       campaigns: renderCampaigns,
+      statistics: renderStatistics,
       ads: renderAdStudio,
       planning: renderPlanning,
       reminders: renderReminders,
@@ -948,7 +1140,8 @@ function renderSelectors() {
     { element: elements.workCampaignFilter, label: "Alla listor" },
     { element: elements.placesCampaignSelect, label: "Skapa ny lista" },
     { element: elements.csvCampaignSelect, label: "Ingen lista" },
-    { element: elements.planningCampaignSelect, label: "Alla öppna leads" }
+    { element: elements.planningCampaignSelect, label: "Alla öppna leads" },
+    { element: elements.statisticsCampaignSelect, label: "Alla listor" }
   ];
 
   campaignSelects.forEach(({ element, label }) => {
@@ -967,6 +1160,9 @@ function renderSelectors() {
       element.value = currentValue;
     }
   });
+  if (elements.statisticsCampaignSelect) {
+    elements.statisticsCampaignSelect.value = state.statistics.campaignId || "";
+  }
 
   elements.customerStatusFilter.innerHTML = `<option value="">Alla statusar</option>${LEAD_STATUSES.map(
     (status) => `<option value="${status}">${status}</option>`
@@ -978,6 +1174,1587 @@ function renderSelectors() {
   renderManualBranchSuggestions();
   renderManualCampaignOptions();
   renderInvoiceLeadOptions();
+}
+
+function applyStatisticsPreset() {
+  const today = new Date();
+  const preset = state.statistics.rangePreset;
+  if (preset === "custom") {
+    return;
+  }
+  if (preset === "today") {
+    const key = formatLocalDate(today);
+    state.statistics.fromDate = key;
+    state.statistics.toDate = key;
+    return;
+  }
+  if (preset === "week") {
+    state.statistics.fromDate = formatLocalDate(getStartOfWeek(today));
+    state.statistics.toDate = formatLocalDate(today);
+    return;
+  }
+  if (preset === "month") {
+    state.statistics.fromDate = formatLocalDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    state.statistics.toDate = formatLocalDate(today);
+    return;
+  }
+  const days = { last7: 6, last30: 29, last90: 89 }[preset] ?? 29;
+  state.statistics.fromDate = formatLocalDate(daysAgo(days));
+  state.statistics.toDate = formatLocalDate(today);
+}
+
+function getStatisticsDateRange() {
+  if (state.statistics.rangePreset !== "custom") {
+    applyStatisticsPreset();
+  }
+  let startKey = state.statistics.fromDate || formatLocalDate(daysAgo(29));
+  let endKey = state.statistics.toDate || formatLocalDate(new Date());
+  if (startKey > endKey) {
+    [startKey, endKey] = [endKey, startKey];
+  }
+  return {
+    startKey,
+    endKey,
+    label: startKey === endKey ? formatWeekdayDate(startKey) : `${formatWeekdayDate(startKey)} – ${formatWeekdayDate(endKey)}`
+  };
+}
+
+function renderStatistics() {
+  if (!elements.statisticsKpis) {
+    return;
+  }
+  const range = getStatisticsDateRange();
+  syncStatisticsControls(range);
+  const summary = buildStatisticsSummary(range);
+
+  elements.statisticsFeedback.textContent = state.statistics.feedback || `Visar ${range.label}. Telavox räknas från sparade/synkade samtal i perioden.`;
+  elements.statisticsStatusRange.textContent = state.statistics.campaignId ? "Vald lista, nuläge" : "Aktiva kunder just nu";
+  renderStatisticsKpis(summary);
+  renderStatisticsStatusBars(summary);
+  renderStatisticsInsights(summary);
+  renderStatisticsActivityBars(summary, range);
+  renderStatisticsSegments(summary);
+  renderStatisticsTelavoxBreakdown(summary);
+  renderStatisticsUnmatchedCalls(summary);
+}
+
+function syncStatisticsControls(range = getStatisticsDateRange()) {
+  if (elements.statisticsCampaignSelect) {
+    elements.statisticsCampaignSelect.value = state.statistics.campaignId || "";
+  }
+  if (elements.statisticsRangePreset) {
+    elements.statisticsRangePreset.value = state.statistics.rangePreset;
+  }
+  if (elements.statisticsGroupBy) {
+    elements.statisticsGroupBy.value = state.statistics.groupBy;
+  }
+  if (elements.statisticsChartMetric) {
+    const metrics = getStatisticsChartMetrics();
+    if (!metrics.some((metric) => metric.value === state.statistics.chartMetric)) {
+      state.statistics.chartMetric = "totalCalls";
+    }
+    elements.statisticsChartMetric.innerHTML = metrics
+      .map((metric) => `<option value="${escapeHtml(metric.value)}">${escapeHtml(metric.label)}</option>`)
+      .join("");
+    elements.statisticsChartMetric.value = state.statistics.chartMetric;
+  }
+  if (elements.statisticsChartMetricButtons) {
+    const metrics = getStatisticsPrimaryChartMetrics();
+    if (!metrics.some((metric) => metric.value === state.statistics.chartMetric)) {
+      state.statistics.chartMetric = "totalCalls";
+    }
+    elements.statisticsChartMetricButtons.innerHTML = metrics.map((metric) => `
+      <button class="statistics-chart-mode ${state.statistics.chartMetric === metric.value ? "is-active" : ""}" type="button" data-statistics-chart-metric="${escapeHtml(metric.value)}">
+        ${escapeHtml(metric.shortLabel || metric.label)}
+      </button>
+    `).join("");
+  }
+  if (elements.statisticsFromDate) {
+    elements.statisticsFromDate.value = range.startKey;
+  }
+  if (elements.statisticsToDate) {
+    elements.statisticsToDate.value = range.endKey;
+  }
+  if (elements.statisticsSyncTelavoxButton) {
+    elements.statisticsSyncTelavoxButton.disabled = state.statistics.syncBusy;
+    elements.statisticsSyncTelavoxButton.textContent = state.statistics.syncBusy ? "Synkar..." : "Synka Telavox";
+  }
+}
+
+function getStatisticsChartMetrics() {
+  return [
+    ...STATISTICS_CHART_BASE_METRICS,
+    ...LEAD_STATUSES.map((status) => ({
+      value: `${STATISTICS_CHART_STATUS_PREFIX}${status}`,
+      label: `Status: ${status}`,
+      color: STATISTICS_STATUS_COLORS[status] || "#2563eb"
+    }))
+  ];
+}
+
+function getStatisticsPrimaryChartMetrics() {
+  const wanted = ["totalCalls", "outgoing", "incoming", "missed", "matchedCalls", "inferredCalls", "directSalesCalls", "sales"];
+  return wanted
+    .map((value) => getStatisticsChartMetrics().find((metric) => metric.value === value))
+    .filter(Boolean)
+    .map((metric) => ({
+      ...metric,
+      shortLabel: {
+        totalCalls: "Totalt",
+        outgoing: "Utgående",
+        incoming: "Inkommande",
+        missed: "Missade",
+        matchedCalls: "Matchade",
+        inferredCalls: "Antagna",
+        directSalesCalls: "Säljsamtal",
+        sales: "Sälj"
+      }[metric.value] || metric.label
+    }));
+}
+
+function getStatisticsChartMetric(value = state.statistics.chartMetric) {
+  return getStatisticsChartMetrics().find((metric) => metric.value === value) || getStatisticsChartMetrics()[0];
+}
+
+function buildStatisticsTelavoxAttributions(calls, leads, logEntries) {
+  const leadById = new Map(leads.map((lead) => [lead.id, lead]));
+  const logsByLeadId = new Map();
+  logEntries.forEach((entry) => {
+    if (!entry.leadId) {
+      return;
+    }
+    if (!logsByLeadId.has(entry.leadId)) {
+      logsByLeadId.set(entry.leadId, []);
+    }
+    logsByLeadId.get(entry.leadId).push(entry);
+  });
+
+  const firstPass = calls.map((record) => {
+    const storedLead = record.leadId ? leadById.get(record.leadId) : null;
+    const phoneLead = storedLead || leads.find((lead) => phonesMatchForStatistics(record.remoteNumber, lead.phone));
+    if (phoneLead) {
+      return decorateStatisticsCall(record, phoneLead, "crm", "Matchad via kundens telefonnummer");
+    }
+
+    const noteLead = leads.find((lead) => leadMentionsStatisticsPhone(lead, logsByLeadId.get(lead.id) || [], record.remoteNumber));
+    if (noteLead) {
+      return decorateStatisticsCall(record, noteLead, "note", "Kopplad via telefonnummer i anteckning");
+    }
+
+    return decorateStatisticsCall(record, null, "unmatched", "Ingen säker träff");
+  });
+
+  const dailyBranchStats = new Map();
+  firstPass.forEach((record) => {
+    if (!record.assignedLeadId || !record.branch) {
+      return;
+    }
+    const dateKey = getDateKeyFromIso(record.happenedAt);
+    if (!dateKey) {
+      return;
+    }
+    if (!dailyBranchStats.has(dateKey)) {
+      dailyBranchStats.set(dateKey, new Map());
+    }
+    const branchMap = dailyBranchStats.get(dateKey);
+    if (!branchMap.has(record.branch)) {
+      branchMap.set(record.branch, { count: 0, cityCounts: new Map() });
+    }
+    const branchStat = branchMap.get(record.branch);
+    branchStat.count += 1;
+    if (record.city) {
+      branchStat.cityCounts.set(record.city, (branchStat.cityCounts.get(record.city) || 0) + 1);
+    }
+  });
+
+  return firstPass.map((record) => {
+    if (record.assignedLeadId) {
+      return record;
+    }
+    const dateKey = getDateKeyFromIso(record.happenedAt);
+    const inferred = inferStatisticsBranchForDate(dailyBranchStats.get(dateKey));
+    if (!inferred) {
+      return record;
+    }
+    return {
+      ...record,
+      matchType: "inferred",
+      branch: inferred.branch,
+      city: inferred.city,
+      attributionLabel: `${formatWeekdayDate(dateKey)}: majoriteten var ${inferred.branch}`,
+      attributionConfidence: "Antagen"
+    };
+  });
+}
+
+function decorateStatisticsCall(record, lead, matchType, attributionLabel) {
+  return {
+    ...record,
+    assignedLeadId: lead?.id || "",
+    branch: lead ? getStatisticsLeadBranch(lead) : "",
+    city: lead ? getStatisticsLeadCity(lead) : "",
+    matchType,
+    attributionLabel,
+    attributionConfidence: matchType === "crm" ? "Säker" : matchType === "note" ? "Anteckning" : "Olöst"
+  };
+}
+
+function inferStatisticsBranchForDate(branchMap) {
+  if (!branchMap || !branchMap.size) {
+    return null;
+  }
+  const ranked = [...branchMap.entries()]
+    .map(([branch, stat]) => ({
+      branch,
+      count: stat.count,
+      city: [...stat.cityCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || "Okänd ort"
+    }))
+    .sort((left, right) => right.count - left.count);
+  const top = ranked[0];
+  const second = ranked[1];
+  const total = ranked.reduce((sum, item) => sum + item.count, 0);
+  if (!top || top.count < 2 || (second && top.count <= second.count) || top.count / Math.max(total, 1) < 0.5) {
+    return null;
+  }
+  return top;
+}
+
+function getStatisticsLeadBranch(lead) {
+  return lead?.normalizedBranch || lead?.category || "Okategoriserat";
+}
+
+function getStatisticsLeadCity(lead) {
+  return lead?.targetMarketCity || lead?.normalizedCity || lead?.city || "Okänd ort";
+}
+
+function leadMentionsStatisticsPhone(lead, logEntries, phone) {
+  const haystacks = [
+    lead.notes,
+    lead.contactName,
+    lead.companyName,
+    ...logEntries.map((entry) => `${entry.title || ""} ${entry.text || ""}`)
+  ];
+  return haystacks.some((text) => textMentionsStatisticsPhone(text, phone));
+}
+
+function textMentionsStatisticsPhone(text, phone) {
+  const target = normalizeStatisticsPhone(phone);
+  if (!target) {
+    return false;
+  }
+  return extractStatisticsPhoneCandidates(text).some((candidate) => phonesMatchForStatistics(candidate, target));
+}
+
+function extractStatisticsPhoneCandidates(text) {
+  return String(text || "").match(/(?:\+?\d[\d\s()./-]{5,}\d)/g) || [];
+}
+
+function phonesMatchForStatistics(left, right) {
+  const a = normalizeStatisticsPhone(left);
+  const b = normalizeStatisticsPhone(right);
+  if (!a || !b) {
+    return false;
+  }
+  if (a === b) {
+    return true;
+  }
+  const tailLength = Math.min(9, a.length, b.length);
+  return tailLength >= 7 && a.slice(-tailLength) === b.slice(-tailLength);
+}
+
+function normalizeStatisticsPhone(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function buildStatisticsSummary(range) {
+  const campaignId = state.statistics.campaignId || "";
+  const allActiveLeads = state.data.leads.filter((lead) => !lead.isDeleted);
+  const activeLeads = allActiveLeads.filter((lead) => (campaignId ? lead.listId === campaignId : true));
+  const activeLeadIds = new Set(activeLeads.map((lead) => lead.id));
+  const allActiveLeadById = new Map(allActiveLeads.map((lead) => [lead.id, lead]));
+  const leadById = new Map(activeLeads.map((lead) => [lead.id, lead]));
+  const periodLogs = (state.data.logEntries || []).filter((entry) => isIsoInStatisticsRange(entry.createdAt, range));
+  const rawTelavoxCallsInRange = (state.data.callRecords || [])
+    .filter((record) => record.provider === "telavox")
+    .filter((record) => isIsoInStatisticsRange(record.happenedAt, range));
+  const attributedTelavoxCalls = buildStatisticsTelavoxAttributions(rawTelavoxCallsInRange, allActiveLeads, state.data.logEntries || []);
+  const telavoxCallsInRange = attributedTelavoxCalls
+    .filter((record) => (campaignId ? activeLeadIds.has(record.assignedLeadId) : true));
+  const hardMatchedTelavoxCalls = telavoxCallsInRange.filter((record) => record.matchType === "crm");
+  const noteMatchedTelavoxCalls = telavoxCallsInRange.filter((record) => record.matchType === "note");
+  const inferredTelavoxCalls = telavoxCallsInRange.filter((record) => record.matchType === "inferred");
+  const unresolvedTelavoxCalls = telavoxCallsInRange.filter((record) => record.matchType === "unmatched");
+  const matchedTelavoxCalls = telavoxCallsInRange.filter((record) => record.assignedLeadId && allActiveLeadById.has(record.assignedLeadId));
+  const unmatchedTelavoxCalls = telavoxCallsInRange.filter((record) => !record.assignedLeadId || !allActiveLeadById.has(record.assignedLeadId));
+  const softMatchedTelavoxCalls = telavoxCallsInRange.filter((record) => record.matchType !== "crm");
+  const handlingLeadIds = new Set();
+
+  periodLogs.forEach((entry) => {
+    if (activeLeadIds.has(entry.leadId) && STATISTICS_HANDLING_LOG_TYPES.has(entry.type)) {
+      handlingLeadIds.add(entry.leadId);
+    }
+  });
+  matchedTelavoxCalls.forEach((record) => {
+    if (activeLeadIds.has(record.assignedLeadId)) {
+      handlingLeadIds.add(record.assignedLeadId);
+    }
+  });
+  activeLeads.forEach((lead) => {
+    if (lead.status !== "Ny" && isIsoInStatisticsRange(lead.updatedAt, range)) {
+      handlingLeadIds.add(lead.id);
+    }
+  });
+
+  const contactedLeadIds = new Set(
+    activeLeads
+      .filter((lead) => lead.status !== "Ny")
+      .filter((lead) => handlingLeadIds.has(lead.id) || isIsoInStatisticsRange(lead.updatedAt, range))
+      .map((lead) => lead.id)
+  );
+  const salesLeadIds = new Set(
+    activeLeads
+      .filter((lead) => lead.status === "Closed")
+      .filter((lead) => handlingLeadIds.has(lead.id) || isIsoInStatisticsRange(lead.updatedAt, range))
+      .map((lead) => lead.id)
+  );
+  periodLogs.forEach((entry) => {
+    if (activeLeadIds.has(entry.leadId) && logMentionsStatus(entry, "Closed")) {
+      salesLeadIds.add(entry.leadId);
+      contactedLeadIds.add(entry.leadId);
+      handlingLeadIds.add(entry.leadId);
+    }
+  });
+  const directSalesCalls = telavoxCallsInRange.filter((record) =>
+    record.direction === "outgoing" && record.assignedLeadId && salesLeadIds.has(record.assignedLeadId)
+  );
+
+  const statusCounts = Object.fromEntries(LEAD_STATUSES.map((status) => [status, 0]));
+  activeLeads.forEach((lead) => {
+    statusCounts[lead.status] = (statusCounts[lead.status] || 0) + 1;
+  });
+
+  const telavoxDirectionCounts = telavoxCallsInRange.reduce((counts, record) => {
+    counts[record.direction] = (counts[record.direction] || 0) + 1;
+    return counts;
+  }, { incoming: 0, outgoing: 0, missed: 0 });
+  const totalTelavoxDuration = telavoxCallsInRange.reduce((sum, record) => sum + (Number(record.durationSeconds) || 0), 0);
+  const appCallLogs = periodLogs.filter((entry) => entry.type === "call" && activeLeadIds.has(entry.leadId));
+  const mailLeadCount = activeLeads.filter((lead) => ["Skicka mail", "Mail skickat"].includes(lead.status)).length;
+
+  return {
+    range,
+    campaignId,
+    activeLeads,
+    allActiveLeads,
+    activeLeadIds,
+    leadById,
+    periodLogs,
+    statusCounts,
+    handlingLeadIds,
+    contactedLeadIds,
+    salesLeadIds,
+    telavoxCalls: telavoxCallsInRange,
+    attributedTelavoxCalls,
+    matchedTelavoxCalls,
+    hardMatchedTelavoxCalls,
+    noteMatchedTelavoxCalls,
+    unmatchedTelavoxCalls,
+    inferredTelavoxCalls,
+    unresolvedTelavoxCalls,
+    softMatchedTelavoxCalls,
+    directSalesCalls,
+    telavoxDirectionCounts,
+    totalTelavoxDuration,
+    appCallLogs,
+    mailLeadCount
+  };
+}
+
+function renderStatisticsKpis(summary) {
+  const totalLeads = summary.activeLeads.length;
+  const handled = summary.handlingLeadIds.size;
+  const contacted = summary.contactedLeadIds.size;
+  const sales = summary.salesLeadIds.size;
+  const telavoxTotal = summary.telavoxCalls.length;
+  const ratio = sales ? contacted / sales : 0;
+  const cards = [
+    { label: "Leads totalt", value: totalLeads, sub: `${summary.statusCounts.Ny || 0} nya väntar`, tone: "" },
+    { label: "Hanterade kunder", value: handled, sub: "CRM-aktivitet eller Telavox-träff", tone: "" },
+    { label: "Kontaktade", value: contacted, sub: `${formatStatisticsPercent(contacted, Math.max(totalLeads, 1))} av leads`, tone: "warn" },
+    { label: "Sälj", value: sales, sub: `${formatStatisticsPercent(sales, Math.max(contacted, 1))} av kontaktade`, tone: "good" },
+    { label: "Telavox totalt", value: telavoxTotal, sub: `${summary.matchedTelavoxCalls.length} matchade · ${summary.inferredTelavoxCalls.length} antagna · ${summary.unresolvedTelavoxCalls.length} olösta`, tone: "" },
+    { label: "Snitt till sälj", value: sales ? formatDecimal(ratio) : "–", sub: sales ? "kontaktade kunder per sälj" : "väntar på sälj i perioden", tone: "" }
+  ];
+
+  elements.statisticsKpis.innerHTML = cards.map((card) => `
+    <article class="statistics-kpi ${card.tone ? `is-${card.tone}` : ""}">
+      <span>${escapeHtml(card.label)}</span>
+      <strong>${escapeHtml(String(card.value))}</strong>
+      <small>${escapeHtml(card.sub)}</small>
+    </article>
+  `).join("");
+}
+
+function renderStatisticsStatusBars(summary) {
+  const maxValue = Math.max(1, ...Object.values(summary.statusCounts));
+  elements.statisticsStatusBars.innerHTML = LEAD_STATUSES.map((status) => {
+    const count = summary.statusCounts[status] || 0;
+    const width = count ? Math.max(2, Math.round((count / maxValue) * 100)) : 0;
+    return `
+      <div class="statistics-bar-row">
+        <label>${escapeHtml(status)}</label>
+        <div class="statistics-bar-track"><i style="width:${width}%;background:${STATISTICS_STATUS_COLORS[status] || "#2563eb"}"></i></div>
+        <b>${count}</b>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderStatisticsInsights(summary) {
+  const contacted = summary.contactedLeadIds.size;
+  const sales = summary.salesLeadIds.size;
+  const totalTelavox = summary.telavoxCalls.length;
+  const outgoing = summary.telavoxDirectionCounts.outgoing || 0;
+  const directSalesCalls = summary.directSalesCalls.length;
+  const insights = [
+    {
+      title: "Kontakt till sälj",
+      body: "Kontaktade kunder per sälj.",
+      badge: sales ? `${formatDecimal(contacted / sales)} : 1` : "–",
+      tone: "green"
+    },
+    {
+      title: "Råa Telavox-samtal till sälj",
+      body: "Alla Telavox-samtal i perioden.",
+      badge: sales ? `${formatDecimal(totalTelavox / sales)} : 1` : `${totalTelavox} samtal`,
+      tone: "blue"
+    },
+    {
+      title: "Utgående samtal till sälj",
+      body: "Dina aktiva ringförsök.",
+      badge: sales ? `${formatDecimal(outgoing / sales)} : 1` : `${outgoing} utgående`,
+      tone: "amber"
+    },
+    {
+      title: "Direkta säljsamtal",
+      body: "Utgående samtal till kunder som blev sälj.",
+      badge: sales ? `${formatDecimal(directSalesCalls / sales)} : 1` : `${directSalesCalls} samtal`,
+      tone: "green"
+    },
+    {
+      title: "Olösta nummer",
+      body: "Samtal utan kund eller rimlig bransch.",
+      badge: `${summary.unresolvedTelavoxCalls.length}`,
+      tone: summary.unresolvedTelavoxCalls.length ? "red" : "green"
+    }
+  ];
+
+  elements.statisticsInsights.innerHTML = insights.map((item) => `
+    <article class="statistics-insight">
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <span>${escapeHtml(item.body)}</span>
+      </div>
+      <b class="statistics-badge is-${escapeHtml(item.tone)}">${escapeHtml(item.badge)}</b>
+    </article>
+  `).join("");
+}
+
+function renderStatisticsActivityBars(summary, range) {
+  const buckets = buildStatisticsBuckets(summary, range);
+  const metric = getStatisticsChartMetric();
+  const series = getStatisticsChartSeries(metric);
+  const maxValue = Math.max(1, ...buckets.flatMap((bucket) => series.map((item) => getStatisticsBucketMetricValue(bucket, item.value))));
+  const isDense = buckets.length > 18;
+  const bucketMinWidth = isDense ? 42 : buckets.length > 10 ? 58 : 88;
+  const maxBarHeight = isDense ? 92 : 118;
+  elements.statisticsActivityBars.innerHTML = `
+    <div class="statistics-bucket-grid ${isDense ? "is-dense" : ""}" style="grid-template-columns: repeat(${Math.max(buckets.length, 1)}, minmax(${bucketMinWidth}px, 1fr));">
+      ${buckets.map((bucket) => `
+        <div class="statistics-bucket">
+          <div class="statistics-bucket-bars">
+            ${series.map((item) => {
+              const value = getStatisticsBucketMetricValue(bucket, item.value);
+              const height = value ? Math.max(3, Math.round((value / maxValue) * maxBarHeight)) : 0;
+              return `
+                <span class="statistics-bucket-bar" title="${escapeHtml(item.label)}: ${value}">
+                  <b>${value || ""}</b>
+                  <i style="height:${height}px;background:${item.color}"></i>
+                </span>
+              `;
+            }).join("")}
+          </div>
+          <strong>${escapeHtml(bucket.label)}</strong>
+          <span>${bucket.totalCalls} samtal · ${bucket.sales} sälj</span>
+        </div>
+      `).join("")}
+    </div>
+    <div class="statistics-legend">
+      ${series.map((item) => `<span><i style="background:${item.color}"></i>${escapeHtml(item.label)}</span>`).join("")}
+    </div>
+  `;
+  elements.statisticsActivityLegend.textContent = `${range.label} · ${state.statistics.groupBy === "day" ? "daglig vy" : state.statistics.groupBy === "week" ? "veckovy" : "månadsvis"}`;
+}
+
+function getStatisticsChartSeries(metric) {
+  if (metric.value === "callMix") {
+    return [
+      { value: "outgoing", label: "Utgående", color: STATISTICS_CALL_COLORS.outgoing },
+      { value: "incoming", label: "Inkommande", color: STATISTICS_CALL_COLORS.incoming },
+      { value: "missed", label: "Missade", color: STATISTICS_CALL_COLORS.missed }
+    ];
+  }
+  return [metric];
+}
+
+function getStatisticsBucketMetricValue(bucket, metricValue) {
+  if (metricValue.startsWith(STATISTICS_CHART_STATUS_PREFIX)) {
+    const status = metricValue.slice(STATISTICS_CHART_STATUS_PREFIX.length);
+    return bucket.statusCounts?.[status] || 0;
+  }
+  const value = bucket[metricValue];
+  if (value instanceof Set) {
+    return value.size;
+  }
+  return Number(value) || 0;
+}
+
+function renderStatisticsSegments(summary) {
+  const segments = new Map();
+  const ensureSegment = (branch) => {
+    const key = branch || "Okategoriserat";
+    if (!segments.has(key)) {
+      segments.set(key, {
+        branch: key,
+        callCities: new Map(),
+        handled: 0,
+        contacted: 0,
+        sales: 0,
+        total: 0,
+        telavox: 0,
+        inferred: 0,
+        noteMatched: 0,
+        unresolved: 0
+      });
+    }
+    return segments.get(key);
+  };
+
+  summary.activeLeads.forEach((lead) => {
+    const segment = ensureSegment(getStatisticsLeadBranch(lead));
+    segment.total += 1;
+    if (summary.handlingLeadIds.has(lead.id)) {
+      segment.handled += 1;
+    }
+    if (summary.contactedLeadIds.has(lead.id)) {
+      segment.contacted += 1;
+    }
+    if (summary.salesLeadIds.has(lead.id)) {
+      segment.sales += 1;
+    }
+  });
+  summary.telavoxCalls.forEach((record) => {
+    const branch = record.branch || (record.matchType === "unmatched" ? "Omatchat" : "Okategoriserat");
+    const segment = ensureSegment(branch);
+    segment.telavox += 1;
+    incrementStatisticsCallCity(segment, record.city || "Okänd ort");
+    if (record.matchType === "inferred") {
+      segment.inferred += 1;
+    }
+    if (record.matchType === "note") {
+      segment.noteMatched += 1;
+    }
+    if (record.matchType === "unmatched") {
+      segment.unresolved += 1;
+    }
+  });
+  const rows = [...segments.values()]
+    .filter((segment) => segment.telavox || segment.handled || segment.contacted || segment.sales)
+    .sort((left, right) => right.telavox - left.telavox || right.sales - left.sales || right.handled - left.handled)
+    .slice(0, 8);
+
+  if (!rows.length) {
+    elements.statisticsSegmentsTable.innerHTML = `<div class="empty-state">Inga hanterade segment i perioden.</div>`;
+    return;
+  }
+
+  elements.statisticsSegmentsTable.innerHTML = `
+    <table class="statistics-table">
+      <thead><tr><th>Bransch</th><th>Samtal</th><th>Matchade</th><th>Antagna</th><th>Sälj</th><th>Rate</th></tr></thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <td><strong>${escapeHtml(row.branch)}</strong><br><span>${escapeHtml(formatStatisticsTopCities(row))}</span></td>
+            <td><strong>${row.telavox}</strong></td>
+            <td>${Math.max(0, row.telavox - row.inferred - row.unresolved)}</td>
+            <td>${row.inferred}</td>
+            <td>${row.sales}</td>
+            <td><strong>${formatStatisticsPercent(row.sales, Math.max(row.telavox || row.contacted, 1))}</strong></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function incrementStatisticsCallCity(segment, city) {
+  const key = city || "Okänd ort";
+  segment.callCities.set(key, (segment.callCities.get(key) || 0) + 1);
+}
+
+function formatStatisticsTopCities(segment) {
+  const cities = [...segment.callCities.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 3)
+    .map(([city, count]) => `${city} ${count}`);
+  return cities.length ? cities.join(" · ") : "Inga samtal";
+}
+
+function renderStatisticsTelavoxBreakdown(summary) {
+  const total = summary.telavoxCalls.length;
+  const totalDuration = summary.totalTelavoxDuration;
+  const avgDuration = total ? Math.round(totalDuration / total) : 0;
+  const cards = [
+    ["Utgående", summary.telavoxDirectionCounts.outgoing || 0],
+    ["Inkommande", summary.telavoxDirectionCounts.incoming || 0],
+    ["Missade", summary.telavoxDirectionCounts.missed || 0],
+    ["CRM-matchade", summary.hardMatchedTelavoxCalls.length],
+    ["Via anteckning", summary.noteMatchedTelavoxCalls.length],
+    ["Antagna branscher", summary.inferredTelavoxCalls.length],
+    ["Olösta", summary.unresolvedTelavoxCalls.length],
+    ["Total samtalstid", formatDuration(totalDuration)],
+    ["Snittlängd", formatDuration(avgDuration)]
+  ];
+  elements.statisticsTelavoxSummary.textContent = total
+    ? `${total} samtal · ${summary.matchedTelavoxCalls.length} matchade · ${summary.inferredTelavoxCalls.length} antagna`
+    : "Inga Telavox-samtal i perioden";
+  elements.statisticsTelavoxBreakdown.innerHTML = `
+    <article class="statistics-telavox-total-card">
+      <span>Totalt enligt Telavox</span>
+      <strong>${total}</strong>
+      <small>${formatDuration(totalDuration)} total samtalstid · ${formatDuration(avgDuration)} snitt</small>
+    </article>
+    ${cards.map(([label, value]) => `
+      <article class="statistics-mini-card">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(String(value))}</strong>
+      </article>
+    `).join("")}
+  `;
+}
+
+function renderStatisticsUnmatchedCalls(summary) {
+  const rows = [...summary.softMatchedTelavoxCalls]
+    .sort((left, right) => new Date(right.happenedAt) - new Date(left.happenedAt))
+    .slice(0, 12);
+  if (!rows.length) {
+    elements.statisticsUnmatchedCalls.innerHTML = `<div class="empty-state">Alla Telavox-samtal har säker CRM-träff i perioden.</div>`;
+    return;
+  }
+  elements.statisticsUnmatchedCalls.innerHTML = `
+    <table class="statistics-table">
+      <thead><tr><th>Nummer</th><th>Typ</th><th>När</th><th>Bransch / källa</th><th>Längd</th></tr></thead>
+      <tbody>
+        ${rows.map((record) => `
+          <tr>
+            <td><strong>${escapeHtml(record.remoteNumber || "Saknas")}</strong></td>
+            <td>${escapeHtml(formatTelavoxDirection(record.direction))}</td>
+            <td>${escapeHtml(formatDateTime(record.happenedAt))}</td>
+            <td><strong>${escapeHtml(record.branch || "Okänd")}</strong><br><span>${escapeHtml(record.attributionLabel || formatStatisticsCallMatchType(record.matchType))}</span></td>
+            <td>${escapeHtml(formatDuration(record.durationSeconds))}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function formatStatisticsCallMatchType(matchType) {
+  return {
+    crm: "Säker CRM-träff",
+    note: "Kopplad via anteckning",
+    inferred: "Antagen bransch",
+    unmatched: "Olöst"
+  }[matchType] || "Okänd";
+}
+
+function buildStatisticsBuckets(summary, range) {
+  const buckets = createStatisticsBucketRange(range, state.statistics.groupBy);
+  const bucketMap = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+  summary.telavoxCalls.forEach((record) => {
+    const dateKey = getDateKeyFromIso(record.happenedAt);
+    if (!dateKey) {
+      return;
+    }
+    const bucket = bucketMap.get(getStatisticsBucketKey(dateKey, state.statistics.groupBy));
+    if (!bucket) {
+      return;
+    }
+    bucket[record.direction] = (bucket[record.direction] || 0) + 1;
+    bucket.totalCalls += 1;
+    if (record.assignedLeadId) {
+      bucket.matchedCalls += 1;
+    } else {
+      bucket.unmatchedCalls += 1;
+    }
+    if (record.matchType === "inferred") {
+      bucket.inferredCalls += 1;
+    }
+    if (record.assignedLeadId && summary.salesLeadIds.has(record.assignedLeadId) && record.direction === "outgoing") {
+      bucket.directSalesCalls += 1;
+    }
+    if (record.assignedLeadId) {
+      bucket.handledLeadIds.add(record.assignedLeadId);
+    }
+  });
+
+  summary.periodLogs.forEach((entry) => {
+    const dateKey = getDateKeyFromIso(entry.createdAt);
+    const bucket = bucketMap.get(getStatisticsBucketKey(dateKey, state.statistics.groupBy));
+    if (!bucket || !summary.activeLeadIds.has(entry.leadId)) {
+      return;
+    }
+    if (STATISTICS_HANDLING_LOG_TYPES.has(entry.type)) {
+      bucket.handledLeadIds.add(entry.leadId);
+    }
+  });
+  summary.activeLeads.forEach((lead) => {
+    const dateKey = getDateKeyFromIso(lead.updatedAt);
+    const bucket = bucketMap.get(getStatisticsBucketKey(dateKey, state.statistics.groupBy));
+    if (!bucket || !isIsoInStatisticsRange(lead.updatedAt, range)) {
+      return;
+    }
+    bucket.statusCounts[lead.status] = (bucket.statusCounts[lead.status] || 0) + 1;
+    if (lead.status !== "Ny") {
+      bucket.handledLeadIds.add(lead.id);
+      bucket.contactedLeadIds.add(lead.id);
+    }
+  });
+
+  const salesByBucket = new Map();
+  summary.activeLeads.forEach((lead) => {
+    if (lead.status !== "Closed" || !isIsoInStatisticsRange(lead.updatedAt, range)) {
+      return;
+    }
+    const dateKey = getDateKeyFromIso(lead.updatedAt);
+    const bucketKey = getStatisticsBucketKey(dateKey, state.statistics.groupBy);
+    if (!salesByBucket.has(bucketKey)) {
+      salesByBucket.set(bucketKey, new Set());
+    }
+    salesByBucket.get(bucketKey).add(lead.id);
+  });
+  summary.periodLogs.forEach((entry) => {
+    if (!summary.activeLeadIds.has(entry.leadId) || !logMentionsStatus(entry, "Closed")) {
+      return;
+    }
+    const dateKey = getDateKeyFromIso(entry.createdAt);
+    const bucketKey = getStatisticsBucketKey(dateKey, state.statistics.groupBy);
+    if (!salesByBucket.has(bucketKey)) {
+      salesByBucket.set(bucketKey, new Set());
+    }
+    salesByBucket.get(bucketKey).add(entry.leadId);
+  });
+  salesByBucket.forEach((leadIds, bucketKey) => {
+    const bucket = bucketMap.get(bucketKey);
+    if (bucket) {
+      bucket.sales = leadIds.size;
+    }
+  });
+
+  return buckets.map((bucket) => ({
+    ...bucket,
+    handled: bucket.handledLeadIds.size,
+    contacted: bucket.contactedLeadIds.size
+  }));
+}
+
+function createStatisticsBucketRange(range, groupBy) {
+  const buckets = [];
+  let cursor = parseLocalDateKey(range.startKey);
+  const end = parseLocalDateKey(range.endKey);
+  if (groupBy === "week") {
+    cursor = getStartOfWeek(cursor);
+  }
+  if (groupBy === "month") {
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  }
+  while (cursor <= end) {
+    const key = getStatisticsBucketKey(formatLocalDate(cursor), groupBy);
+    if (!buckets.some((bucket) => bucket.key === key)) {
+      buckets.push({
+        key,
+        label: getStatisticsBucketLabel(cursor, groupBy),
+        outgoing: 0,
+        incoming: 0,
+        missed: 0,
+        totalCalls: 0,
+        matchedCalls: 0,
+        unmatchedCalls: 0,
+        inferredCalls: 0,
+        directSalesCalls: 0,
+        handledLeadIds: new Set(),
+        contactedLeadIds: new Set(),
+        statusCounts: Object.fromEntries(LEAD_STATUSES.map((status) => [status, 0])),
+        sales: 0
+      });
+    }
+    cursor = groupBy === "month"
+      ? new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
+      : addDays(cursor, groupBy === "week" ? 7 : 1);
+  }
+  return buckets;
+}
+
+function getStatisticsBucketKey(dateKey, groupBy) {
+  if (!dateKey) {
+    return "";
+  }
+  const date = parseLocalDateKey(dateKey);
+  if (groupBy === "week") {
+    return formatLocalDate(getStartOfWeek(date));
+  }
+  if (groupBy === "month") {
+    return formatLocalDate(new Date(date.getFullYear(), date.getMonth(), 1)).slice(0, 7);
+  }
+  return dateKey;
+}
+
+function getStatisticsBucketLabel(date, groupBy) {
+  if (groupBy === "week") {
+    return `v.${getWeekNumber(date)}`;
+  }
+  if (groupBy === "month") {
+    return new Intl.DateTimeFormat("sv-SE", { month: "short" }).format(date);
+  }
+  return new Intl.DateTimeFormat("sv-SE", { weekday: "short", day: "numeric" }).format(date);
+}
+
+async function syncStatisticsTelavox() {
+  if (state.statistics.syncBusy) {
+    return;
+  }
+  const range = getStatisticsDateRange();
+  state.statistics.syncBusy = true;
+  state.statistics.feedback = `Synkar Telavox-samtal ${range.label}...`;
+  renderStatistics();
+  try {
+    const result = await window.desktopApp.syncTelavoxPeriod({
+      fromDate: range.startKey,
+      toDate: range.endKey,
+      token: elements.telavoxTokenInput?.value?.trim() || state.data.settings.telavoxToken || ""
+    });
+    await refreshState();
+    state.statistics.feedback = `Telavox synkad: ${result.totalFetched} samtal hämtade, ${result.matchedCount} matchade, ${result.unmatchedCount} omatchade.`;
+  } catch (error) {
+    state.statistics.feedback = error.message || "Telavox-synken misslyckades.";
+  } finally {
+    state.statistics.syncBusy = false;
+    renderStatistics();
+  }
+}
+
+function isIsoInStatisticsRange(value, range) {
+  const key = getDateKeyFromIso(value);
+  return Boolean(key) && key >= range.startKey && key <= range.endKey;
+}
+
+function getDateKeyFromIso(value) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return formatLocalDate(date);
+}
+
+function parseLocalDateKey(value) {
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function getStartOfWeek(date) {
+  const copy = new Date(date);
+  const day = copy.getDay() || 7;
+  copy.setDate(copy.getDate() - day + 1);
+  copy.setHours(12, 0, 0, 0);
+  return copy;
+}
+
+function addDays(date, amount) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + amount);
+  return copy;
+}
+
+function getWeekNumber(date) {
+  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNumber = target.getUTCDay() || 7;
+  target.setUTCDate(target.getUTCDate() + 4 - dayNumber);
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+  return Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
+}
+
+function logMentionsStatus(entry, status) {
+  const haystack = normalizeText(`${entry.title || ""} ${entry.text || ""}`);
+  return haystack.includes(normalizeText(`Status ändrad till ${status}`)) || haystack.includes(normalizeText(status));
+}
+
+function formatStatisticsPercent(value, total) {
+  if (!total) {
+    return "0%";
+  }
+  return `${formatDecimal((value / total) * 100)}%`;
+}
+
+async function renderStatistics() {
+  if (!elements.statisticsKpis) {
+    return;
+  }
+  const range = getStatisticsDateRange();
+  syncStatisticsControls(range);
+  const token = Date.now();
+  state.statistics.renderToken = token;
+  if (!state.statistics.summary) {
+    elements.statisticsFeedback.textContent = "Bygger statistikmotor...";
+  }
+  try {
+    const summary = await window.desktopApp.getStatistics({
+      fromDate: range.startKey,
+      toDate: range.endKey,
+      groupBy: state.statistics.groupBy,
+      campaignId: state.statistics.campaignId,
+      attributionMode: state.statistics.attributionMode,
+      activeQueue: getStatisticsActiveQueue()
+    });
+    if (state.statistics.renderToken !== token) {
+      return;
+    }
+    state.statistics.summary = summary;
+    renderStatisticsFromSummary(summary);
+  } catch (error) {
+    elements.statisticsFeedback.textContent = error.message || "Statistiken kunde inte byggas.";
+  }
+}
+
+function getStatisticsActiveQueue() {
+  if (state.workMode !== "flow" || !state.workQueue.campaignId) {
+    return null;
+  }
+  const campaign = state.data.campaigns.find((item) => item.id === state.workQueue.campaignId);
+  const today = formatLocalDate(new Date());
+  return {
+    selectedListId: state.workQueue.campaignId,
+    selectedIndustry: campaign?.normalizedBranch || campaign?.categories?.[0] || "",
+    selectedCity: campaign?.targetMarkets?.[0] || campaign?.cities?.[0] || "",
+    fromDate: today,
+    toDate: today
+  };
+}
+
+function renderStatisticsFromSummary(summary) {
+  if (!summary) {
+    return;
+  }
+  const range = summary.range || getStatisticsDateRange();
+  elements.statisticsFeedback.textContent =
+    state.statistics.feedback ||
+    `Visar ${range.label}. Hard data, inferred data och raw Telavox hålls separerade.`;
+  syncStatisticsControls(range);
+  renderStatisticsKpis(summary);
+  renderStatisticsCoverage(summary);
+  renderStatisticsInsights(summary);
+  renderStatisticsSeriesPicker(summary);
+  renderStatisticsActivityBars(summary);
+  renderStatisticsSegments(summary);
+  renderStatisticsTelavoxBreakdown(summary);
+  renderStatisticsUnmatchedCalls(summary);
+}
+
+function syncStatisticsControls(range = getStatisticsDateRange()) {
+  if (elements.statisticsCampaignSelect) {
+    elements.statisticsCampaignSelect.value = state.statistics.campaignId || "";
+  }
+  if (elements.statisticsRangePreset) {
+    elements.statisticsRangePreset.value = state.statistics.rangePreset;
+  }
+  if (elements.statisticsGroupBy) {
+    elements.statisticsGroupBy.value = state.statistics.groupBy;
+  }
+  if (elements.statisticsAttributionMode) {
+    elements.statisticsAttributionMode.value = state.statistics.attributionMode || "hard_inferred";
+  }
+  if (elements.statisticsHideEmptyBuckets) {
+    elements.statisticsHideEmptyBuckets.checked = state.statistics.hideEmptyBuckets !== false;
+  }
+  if (elements.statisticsFromDate) {
+    elements.statisticsFromDate.value = range.startKey;
+  }
+  if (elements.statisticsToDate) {
+    elements.statisticsToDate.value = range.endKey;
+  }
+  if (elements.statisticsSegmentSort) {
+    elements.statisticsSegmentSort.value = state.statistics.segmentSort || "priorityScore";
+  }
+  if (elements.statisticsSyncTelavoxButton) {
+    elements.statisticsSyncTelavoxButton.disabled = state.statistics.syncBusy;
+    elements.statisticsSyncTelavoxButton.textContent = state.statistics.syncBusy ? "Synkar..." : "Synka Telavox";
+  }
+}
+
+function renderStatisticsKpis(summary) {
+  const cards = [
+    ["Leads totalt", summary.kpis.totalLeads, `${summary.kpis.newLeads} nya i perioden`],
+    ["Nya leads", summary.kpis.newLeads, "Skapade i valt intervall"],
+    ["Hanterade CRM-kunder", summary.kpis.handledCRMCustomers, "Status, note, reminder, ringlogg eller Telavox-match"],
+    ["Kontaktade CRM-kunder", summary.kpis.contactedCRMCustomers, "Kontaktstatus eller connected call"],
+    ["Sälj", summary.kpis.sales, `${formatSek(summary.kpis.revenue)} revenue`, "good"],
+    ["Revenue", formatSek(summary.kpis.revenue), `${formatSek(summary.kpis.averageOrderValue)} avg order`, "good"],
+    ["Average order value", formatSek(summary.kpis.averageOrderValue), "Från lead sale/order value"],
+    ["Raw Telavox total", summary.kpis.rawTelavoxTotal, "Allt sparat från Telavox"],
+    ["Outbound total", summary.kpis.outboundTotal, "Alla utgående Telavox-samtal"],
+    ["Outbound sales dials", summary.kpis.outboundSalesDials, "Hard + inferred säljdials"],
+    ["Connected sales calls", summary.kpis.connectedSalesCalls, "Över threshold"],
+    ["Hard matched calls", summary.kpis.hardMatchedCalls, "Exact, extra, notes eller call intent"],
+    ["Inferred calls", summary.kpis.inferredCalls, "Aktiv kö eller tidsblock", "warn"],
+    ["Unmatched calls", summary.kpis.unmatchedCalls, "Inte hanterade som CRM-kunder", summary.kpis.unmatchedCalls ? "warn" : "good"],
+    ["Dials per sale", formatStatNumber(summary.kpis.dialsPerSale), "Hard säljdials per sälj"],
+    ["Connected/sale", formatStatNumber(summary.kpis.connectedCallsPerSale), "Connected calls per sälj"],
+    ["Revenue/dial", formatSek(summary.kpis.revenuePerDial), "Hard säljdials"],
+    ["Revenue/hour", formatSek(summary.kpis.revenuePerHour), "Samtalstid"],
+    ["Expected kr/dial baseline", formatSek(summary.kpis.expectedKrPerDialBaseline), "Bayesian baseline"]
+  ];
+  elements.statisticsKpis.innerHTML = cards.map(([label, value, sub, tone]) => `
+    <article class="statistics-kpi ${tone ? `is-${tone}` : ""}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+      <small>${escapeHtml(sub || "")}</small>
+    </article>
+  `).join("");
+}
+
+function renderStatisticsCoverage(summary) {
+  if (!elements.statisticsCoverage) {
+    return;
+  }
+  const coverage = summary.coverage || {};
+  elements.statisticsTelavoxSummary.textContent = coverage.lastSync
+    ? `Senaste synk ${formatDateTime(coverage.lastSync)}`
+    : "Ingen sync registrerad";
+  const rows = [
+    ["Valt intervall", `${coverage.selectedFromDate || summary.range.startKey} - ${coverage.selectedToDate || summary.range.endKey}`],
+    ["Sparade samtal i intervallet", coverage.storedCallsInSelectedRange ?? 0],
+    ["Hämtade i matchande syncar", coverage.fetchedCallsInMatchingSyncs ?? 0],
+    ["Endpoint", coverage.apiEndpoint || "GET https://api.telavox.se/calls"],
+    ["API-begränsning", coverage.apiLimitation || "Okänd"],
+    ["Datavarning", coverage.warning || "Ingen varning"]
+  ];
+  elements.statisticsCoverage.innerHTML = rows.map(([label, value]) => `
+    <article class="statistics-mini-card ${label === "Datavarning" ? "is-warning" : ""}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value || "Saknas"))}</strong>
+    </article>
+  `).join("");
+}
+
+function renderStatisticsInsights(summary) {
+  elements.statisticsInsights.innerHTML = (summary.insights || []).map((item) => `
+    <article class="statistics-insight">
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <span>${escapeHtml(item.detail)}</span>
+      </div>
+      <b class="statistics-badge is-${item.money ? "green" : "blue"}">${escapeHtml(item.money ? formatSek(item.value) : formatStatNumber(item.value))}</b>
+    </article>
+  `).join("");
+}
+
+function renderStatisticsSeriesPicker(summary) {
+  if (!elements.statisticsSeriesPicker) {
+    return;
+  }
+  const selected = new Set(state.statistics.selectedSeries);
+  const groups = new Map();
+  (summary.seriesDefinitions || []).forEach((series) => {
+    if (!groups.has(series.group)) {
+      groups.set(series.group, []);
+    }
+    groups.get(series.group).push(series);
+  });
+  elements.statisticsSeriesPicker.innerHTML = [...groups.entries()].map(([group, series]) => `
+    <fieldset>
+      <legend>${escapeHtml(group)}</legend>
+      ${series.map((item) => `
+        <label>
+          <input type="checkbox" data-statistics-series="${escapeHtml(item.key)}" ${selected.has(item.key) ? "checked" : ""} />
+          <span style="--series-color:${escapeHtml(item.color)}">${escapeHtml(item.label)}</span>
+        </label>
+      `).join("")}
+    </fieldset>
+  `).join("");
+}
+
+function renderStatisticsActivityBars(summary) {
+  const definitions = new Map((summary.seriesDefinitions || []).map((series) => [series.key, series]));
+  const selectedSeries = state.statistics.selectedSeries
+    .map((key) => definitions.get(key))
+    .filter(Boolean);
+  const series = selectedSeries.length ? selectedSeries : (summary.seriesDefinitions || []).slice(0, 1);
+  const buckets = (summary.buckets || []).filter((bucket) => !state.statistics.hideEmptyBuckets || !bucket.isEmpty);
+  const chartGroups = groupStatisticsSeriesByScale(series);
+
+  if (!buckets.length || !series.length) {
+    elements.statisticsActivityBars.innerHTML = `<div class="empty-state">Inga datapunkter i vald vy.</div>`;
+    return;
+  }
+
+  elements.statisticsActivityBars.innerHTML = chartGroups.map(([scale, groupSeries]) => {
+    const maxValue = Math.max(1, ...buckets.flatMap((bucket) => groupSeries.map((item) => Number(bucket[item.key]) || 0)));
+    const isDense = buckets.length > 18 || groupSeries.length > 4;
+    const bucketMinWidth = isDense ? 48 : buckets.length > 10 ? 66 : 96;
+    const maxBarHeight = isDense ? 105 : 132;
+    return `
+      <div class="statistics-chart-block">
+        <div class="statistics-chart-scale">${escapeHtml(formatStatisticsScaleLabel(scale))}</div>
+        <div class="statistics-bucket-grid ${isDense ? "is-dense" : ""}" style="grid-template-columns: repeat(${Math.max(buckets.length, 1)}, minmax(${bucketMinWidth}px, 1fr));">
+          ${buckets.map((bucket) => `
+            <div class="statistics-bucket ${bucket.isEmpty ? "is-empty" : ""}">
+              <div class="statistics-bucket-bars">
+                ${groupSeries.map((item) => {
+                  const value = Number(bucket[item.key]) || 0;
+                  const height = value ? Math.max(4, Math.round((value / maxValue) * maxBarHeight)) : 1;
+                  return `
+                    <span class="statistics-bucket-bar" title="${escapeHtml(item.label)}: ${escapeHtml(formatStatisticsSeriesValue(value, item.scale))}">
+                      <b>${escapeHtml(value ? formatStatisticsCompactValue(value, item.scale) : "")}</b>
+                      <i style="height:${height}px;background:${escapeHtml(item.color)}"></i>
+                    </span>
+                  `;
+                }).join("")}
+              </div>
+              <strong>${escapeHtml(bucket.label)}</strong>
+              <span>${bucket.rawTelavoxCalls} raw · ${bucket.sales} sälj</span>
+            </div>
+          `).join("")}
+        </div>
+        <div class="statistics-legend">
+          ${groupSeries.map((item) => `<span><i style="background:${escapeHtml(item.color)}"></i>${escapeHtml(item.label)}</span>`).join("")}
+        </div>
+      </div>
+    `;
+  }).join("");
+  elements.statisticsActivityLegend.textContent = `${summary.range.label} · ${summary.groupBy === "day" ? "daglig vy" : summary.groupBy === "week" ? "veckovy" : "månadsvy"} · ${formatStatisticsAttributionMode(summary.attributionMode)}`;
+}
+
+function renderStatisticsSegments(summary) {
+  const rows = sortStatisticsSegments(summary.segmentStats || []).filter((row) => !state.statistics.pausedSegments.has(row.segmentKey)).slice(0, 40);
+  if (!rows.length) {
+    elements.statisticsSegmentsTable.innerHTML = `<div class="empty-state">Inga segment med aktivitet i perioden.</div>`;
+    return;
+  }
+  elements.statisticsSegmentsTable.innerHTML = `
+    <table class="statistics-table statistics-segment-table">
+      <thead>
+        <tr>
+          <th>Segment</th>
+          <th>Bransch</th>
+          <th>Stad</th>
+          <th>Leads kvar</th>
+          <th>Hårda säljdials</th>
+          <th>Antagna</th>
+          <th>Kontaktade</th>
+          <th>Sälj</th>
+          <th>Revenue</th>
+          <th>Avg order</th>
+          <th>Dials/sälj</th>
+          <th>Kr/dial</th>
+          <th>Kr/timme</th>
+          <th>Datakvalitet</th>
+          <th>Confidence</th>
+          <th>Varför</th>
+          <th>Åtgärd</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <td><strong>${escapeHtml(row.segmentLabel)}</strong><br><span>${escapeHtml(formatSegmentType(row.segmentType))}</span></td>
+            <td>${escapeHtml(row.industry || "Alla")}</td>
+            <td>${escapeHtml(row.city || "Alla")}</td>
+            <td>${row.availableLeads}</td>
+            <td>${row.outboundSalesDialsHard}</td>
+            <td>${row.outboundSalesDialsInferred}</td>
+            <td>${row.contactedLeads}</td>
+            <td>${row.salesCount}</td>
+            <td>${escapeHtml(formatSek(row.revenue))}</td>
+            <td>${escapeHtml(formatSek(row.averageOrderValue))}</td>
+            <td>${escapeHtml(formatStatNumber(row.dialsPerSale))}</td>
+            <td>${escapeHtml(formatSek(row.expectedKrPerDial))}</td>
+            <td>${escapeHtml(formatSek(row.revenuePerHour))}</td>
+            <td><span class="statistics-quality is-${escapeHtml(row.dataQuality)}">${escapeHtml(row.dataQuality)}</span><br><span>${escapeHtml((row.warnings || []).join(", ") || "OK")}</span></td>
+            <td>${formatStatisticsPercent(row.confidenceScore, 1)}<br><span>${formatStatisticsPercent(row.hardDataShare, 1)} hard</span></td>
+            <td><span>${escapeHtml(row.why)}</span></td>
+            <td>
+              <div class="statistics-actions">
+                <button type="button" class="secondary-button" data-stat-segment-action="plan" data-segment-key="${escapeHtml(row.segmentKey)}">Använd i plan</button>
+                <button type="button" class="ghost-button" data-stat-segment-action="test" data-segment-key="${escapeHtml(row.segmentKey)}">Testa mer</button>
+                <button type="button" class="ghost-button" data-stat-segment-action="pause" data-segment-key="${escapeHtml(row.segmentKey)}">Pausa</button>
+                <button type="button" class="ghost-button" data-stat-segment-action="customers" data-segment-key="${escapeHtml(row.segmentKey)}">Visa kunder</button>
+                <button type="button" class="ghost-button" data-stat-segment-action="calls" data-segment-key="${escapeHtml(row.segmentKey)}">Visa samtal</button>
+              </div>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderStatisticsTelavoxBreakdown(summary) {
+  const total = summary.telavoxTotals || {};
+  const coverage = summary.coverage || {};
+  const cards = [
+    ["Raw calls total", total.rawCallsTotal || 0],
+    ["Outgoing total", total.outgoingTotal || 0],
+    ["Incoming total", total.incomingTotal || 0],
+    ["Missed", total.missed || 0],
+    ["Outbound sales dials", total.outboundSalesDials || 0],
+    ["Connected sales calls", total.connectedSalesCalls || 0],
+    ["Matched hard", total.matchedHard || 0],
+    ["Matched inferred", total.matchedInferred || 0],
+    ["Unmatched", total.unmatched || 0],
+    ["Ignored/private/internal", total.ignoredPrivateInternal || 0],
+    ["Total call time", formatDuration(Math.round(total.totalCallTimeSeconds || 0))],
+    ["Average call length", formatDuration(Math.round(total.averageCallLengthSeconds || 0))],
+    ["Average connected length", formatDuration(Math.round(total.averageConnectedCallLengthSeconds || 0))],
+    ["Sync coverage", coverage.storedCallsInSelectedRange ?? 0],
+    ["Last sync", coverage.lastSync ? formatDateTime(coverage.lastSync) : "Saknas"],
+    ["API warning", coverage.hasLimitationWarning ? "Kan vara ofullständig" : "OK"]
+  ];
+  elements.statisticsTelavoxBreakdown.innerHTML = cards.map(([label, value], index) => `
+    <article class="${index === 0 ? "statistics-telavox-total-card" : "statistics-mini-card"}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+      ${index === 0 ? `<small>${escapeHtml(coverage.apiLimitation || "Legacy /calls sparas lokalt historiskt.")}</small>` : ""}
+    </article>
+  `).join("");
+}
+
+function renderStatisticsUnmatchedCalls(summary) {
+  const rows = summary.unmatchedCalls || [];
+  if (!rows.length) {
+    elements.statisticsUnmatchedCalls.innerHTML = `<div class="empty-state">Inga omatchade eller antagna samtal i vald vy.</div>`;
+    return;
+  }
+  elements.statisticsUnmatchedCalls.innerHTML = `
+    <table class="statistics-table">
+      <thead><tr><th>Nummer</th><th>Datum/tid</th><th>Typ</th><th>Längd</th><th>Föreslagen match</th><th>Föreslagen bransch/stad</th><th>Confidence</th><th>Matchorsak</th><th>Åtgärd</th></tr></thead>
+      <tbody>
+        ${rows.slice(0, 60).map((call) => `
+          <tr>
+            <td><strong>${escapeHtml(call.displayNumber || call.originalNumber || "Saknas")}</strong><br><span>${escapeHtml(call.normalizedNumber || "")}</span></td>
+            <td>${escapeHtml(formatDateTime(call.datetime))}</td>
+            <td>${escapeHtml(formatTelavoxDirection(call.direction))}</td>
+            <td>${escapeHtml(formatDuration(call.durationSeconds))}</td>
+            <td>${escapeHtml(call.matchedLeadName || "Ingen säker")}</td>
+            <td><strong>${escapeHtml(call.matchedIndustry || "Okänd")}</strong><br><span>${escapeHtml(call.matchedCity || "Okänd stad")}</span></td>
+            <td>${formatStatisticsPercent(call.matchConfidence, 1)}</td>
+            <td><span>${escapeHtml(formatStatisticsMatchType(call.matchType))}</span><br><span>${escapeHtml(call.attributionReason || "")}</span></td>
+            <td>
+              <div class="statistics-actions">
+                <button type="button" class="secondary-button" data-stat-call-action="link" data-call-id="${escapeHtml(call.id)}">Koppla</button>
+                <button type="button" class="ghost-button" data-stat-call-action="extra" data-call-id="${escapeHtml(call.id)}">Extra nummer</button>
+                <button type="button" class="ghost-button" data-stat-call-action="create" data-call-id="${escapeHtml(call.id)}">Ny kund</button>
+                <button type="button" class="ghost-button" data-stat-call-action="ignore" data-call-id="${escapeHtml(call.id)}">Ignorera</button>
+                <button type="button" class="ghost-button" data-stat-call-action="private" data-call-id="${escapeHtml(call.id)}">Privat/internt</button>
+              </div>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+async function syncStatisticsTelavox() {
+  if (state.statistics.syncBusy) {
+    return;
+  }
+  const range = getStatisticsDateRange();
+  state.statistics.syncBusy = true;
+  state.statistics.feedback = `Synkar Telavox-samtal ${range.label}...`;
+  renderStatisticsFromSummary(state.statistics.summary);
+  try {
+    const result = await window.desktopApp.syncTelavoxPeriod({
+      fromDate: range.startKey,
+      toDate: range.endKey,
+      token: elements.telavoxTokenInput?.value?.trim() || state.data.settings.telavoxToken || ""
+    });
+    await refreshState();
+    state.statistics.feedback = `Telavox synkad: ${result.totalFetched} samtal hämtade, ${result.matchedCount} matchade, ${result.unmatchedCount} omatchade. Legacy /calls kan vara begränsad, historik raderas inte lokalt.`;
+  } catch (error) {
+    state.statistics.feedback = error.message || "Telavox-synken misslyckades.";
+  } finally {
+    state.statistics.syncBusy = false;
+    state.statistics.summary = null;
+    renderStatistics();
+  }
+}
+
+async function handleStatisticsUnmatchedAction(event) {
+  const button = event.target.closest("[data-stat-call-action]");
+  if (!button) {
+    return;
+  }
+  const callId = button.dataset.callId;
+  const action = button.dataset.statCallAction;
+  const call = state.statistics.summary?.unmatchedCalls?.find((item) => item.id === callId);
+  try {
+    if (action === "ignore" || action === "private") {
+      await window.desktopApp.resolveTelavoxCall({
+        callRecordId: callId,
+        action: action === "private" ? "private_internal" : "ignore"
+      });
+    } else if (action === "create") {
+      const companyName = window.prompt("Företagsnamn för ny kund?", call?.displayNumber || call?.originalNumber || "");
+      if (!companyName) {
+        return;
+      }
+      await window.desktopApp.resolveTelavoxCall({
+        callRecordId: callId,
+        action: "create_customer",
+        companyName,
+        industry: call?.matchedIndustry || "",
+        city: call?.matchedCity || "",
+        listId: call?.matchedListId || ""
+      });
+    } else {
+      const leadQuery = window.prompt("Skriv företagsnamn att koppla numret till:");
+      if (!leadQuery) {
+        return;
+      }
+      const lead = findLeadByPrompt(leadQuery);
+      if (!lead) {
+        window.alert("Hittade ingen kund med det namnet.");
+        return;
+      }
+      await window.desktopApp.resolveTelavoxCall({
+        callRecordId: callId,
+        action: action === "extra" ? "add_extra_phone" : "link_lead",
+        leadId: lead.id
+      });
+    }
+    await refreshState();
+    state.statistics.summary = null;
+    state.statistics.feedback = "Omatchat nummer löst. Statistiken räknas om.";
+    renderStatistics();
+  } catch (error) {
+    state.statistics.feedback = error.message || "Kunde inte lösa numret.";
+    renderStatisticsFromSummary(state.statistics.summary);
+  }
+}
+
+function handleStatisticsSegmentAction(event) {
+  const button = event.target.closest("[data-stat-segment-action]");
+  if (!button || !state.statistics.summary) {
+    return;
+  }
+  const segment = state.statistics.summary.segmentStats.find((item) => item.segmentKey === button.dataset.segmentKey);
+  if (!segment) {
+    return;
+  }
+  const action = button.dataset.statSegmentAction;
+  if (action === "pause") {
+    state.statistics.pausedSegments.add(segment.segmentKey);
+    state.statistics.feedback = `${segment.segmentLabel} pausat i rankingvyn.`;
+    renderStatisticsFromSummary(state.statistics.summary);
+    return;
+  }
+  if (action === "customers") {
+    state.filters.customerCategory = segment.industry || "";
+    state.filters.customerCity = segment.city || "";
+    state.filters.customerCampaignId = segment.listId || "";
+    state.currentView = "customers";
+    render();
+    return;
+  }
+  if (action === "calls") {
+    state.statistics.selectedSeries = ["rawTelavoxCalls", "outboundSalesDials", "connectedSalesCalls", "unmatchedCalls"];
+    state.statistics.feedback = `Visar samtalsserier för ${segment.segmentLabel}.`;
+    renderStatisticsFromSummary(state.statistics.summary);
+    return;
+  }
+  if (action === "plan" || action === "test") {
+    if (elements.planningBranchesInput && segment.industry) {
+      elements.planningBranchesInput.value = segment.industry;
+    }
+    if (elements.planningCitiesInput && segment.city) {
+      elements.planningCitiesInput.value = segment.city;
+    }
+    if (elements.planningCampaignSelect && segment.listId) {
+      elements.planningCampaignSelect.value = segment.listId;
+    }
+    state.currentView = "planning";
+    render();
+  }
+}
+
+function exportStatisticsDebug(type) {
+  const summary = state.statistics.summary;
+  if (!summary) {
+    return;
+  }
+  const date = formatLocalDate(new Date());
+  if (type === "segments") {
+    const rows = [
+      ["Segment", "Typ", "Bransch", "Stad", "Lista", "Leads kvar", "Hard dials", "Inferred dials", "Sälj", "Revenue", "Expected kr/dial", "Priority", "Datakvalitet", "Confidence", "Varför"],
+      ...(summary.exports?.segmentStats || summary.segmentStats || []).map((row) => [
+        row.segmentLabel,
+        row.segmentType,
+        row.industry,
+        row.city,
+        row.listName,
+        row.availableLeads,
+        row.outboundSalesDialsHard,
+        row.outboundSalesDialsInferred,
+        row.salesCount,
+        row.revenue,
+        row.expectedKrPerDial,
+        row.priorityScore,
+        row.dataQuality,
+        row.confidenceScore,
+        row.why
+      ])
+    ];
+    downloadCsv(rows, `segment-stats-${date}.csv`);
+    return;
+  }
+  const payload = {
+    raw: summary.exports?.rawTelavoxCalls,
+    attributed: summary.exports?.attributedCalls,
+    metrics: summary.exports?.generatedMetrics,
+    unmatched: summary.exports?.unmatchedCalls
+  }[type] || summary.exports;
+  downloadText(JSON.stringify(payload, null, 2), `statistics-${type}-${date}.json`, "application/json;charset=utf-8;");
+}
+
+function findLeadByPrompt(query) {
+  const normalized = normalizeText(query);
+  return state.data.leads.find((lead) => normalizeText(lead.companyName) === normalized) ||
+    state.data.leads.find((lead) => normalizeText(lead.companyName).includes(normalized));
+}
+
+function sortStatisticsSegments(segments) {
+  const key = state.statistics.segmentSort || "priorityScore";
+  const qualityRank = { good: 3, medium: 2, low: 1 };
+  return [...segments].sort((left, right) => {
+    if (key === "dataQuality") {
+      return (qualityRank[right.dataQuality] || 0) - (qualityRank[left.dataQuality] || 0);
+    }
+    if (key === "dialsPerSale") {
+      const leftValue = Number(left[key]) || Number.MAX_SAFE_INTEGER;
+      const rightValue = Number(right[key]) || Number.MAX_SAFE_INTEGER;
+      return leftValue - rightValue;
+    }
+    return (Number(right[key]) || 0) - (Number(left[key]) || 0);
+  });
+}
+
+function groupStatisticsSeriesByScale(series) {
+  const map = new Map();
+  series.forEach((item) => {
+    const scale = item.scale || "count";
+    if (!map.has(scale)) {
+      map.set(scale, []);
+    }
+    map.get(scale).push(item);
+  });
+  return [...map.entries()];
+}
+
+function formatStatisticsSeriesValue(value, scale) {
+  if (scale === "money") {
+    return formatSek(value);
+  }
+  if (scale === "minutes") {
+    return `${formatStatNumber(value)} min`;
+  }
+  if (scale === "seconds") {
+    return formatDuration(Math.round(value));
+  }
+  return formatStatNumber(value);
+}
+
+function formatStatisticsCompactValue(value, scale) {
+  if (scale === "money") {
+    return Number(value) >= 1000 ? `${Math.round(Number(value) / 1000)}k` : `${Math.round(Number(value))}`;
+  }
+  if (scale === "seconds") {
+    return `${Math.round(value)}s`;
+  }
+  if (scale === "minutes") {
+    return formatStatNumber(value);
+  }
+  return formatStatNumber(value);
+}
+
+function formatStatisticsScaleLabel(scale) {
+  return {
+    count: "Antal",
+    money: "Kronor",
+    minutes: "Minuter",
+    seconds: "Sekunder"
+  }[scale] || scale;
+}
+
+function formatStatisticsAttributionMode(mode) {
+  return {
+    hard: "hard only",
+    hard_inferred: "hard + inferred",
+    raw: "raw all"
+  }[mode] || mode;
+}
+
+function formatStatisticsMatchType(matchType) {
+  return {
+    exact_phone: "Exakt telefon",
+    extra_phone: "Extra telefon",
+    notes_phone: "Telefon i anteckning",
+    call_intent: "Ring-klick i appen",
+    active_queue_inferred: "Antagen via aktiv kö",
+    timeblock_inferred: "Antagen via tidsblock",
+    unmatched: "Omatchad",
+    ignored_private_or_internal: "Ignorerad/privat/internt"
+  }[matchType] || "Okänd";
+}
+
+function formatSegmentType(type) {
+  return {
+    industry: "Bransch",
+    city: "Stad",
+    list: "Lista",
+    industry_city: "Bransch + stad",
+    industry_list: "Bransch + lista",
+    city_list: "Stad + lista"
+  }[type] || type;
+}
+
+function formatStatNumber(value) {
+  const numeric = Number(value) || 0;
+  return new Intl.NumberFormat("sv-SE", {
+    maximumFractionDigits: numeric >= 10 ? 0 : 1,
+    minimumFractionDigits: numeric && numeric < 10 ? 1 : 0
+  }).format(numeric);
+}
+
+function formatDecimal(value) {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+  return new Intl.NumberFormat("sv-SE", {
+    maximumFractionDigits: value >= 10 ? 0 : 1,
+    minimumFractionDigits: value && value < 10 ? 1 : 0
+  }).format(value);
 }
 
 function renderDashboard() {
@@ -3610,18 +5387,269 @@ function hexToRgba(hex, opacity = 1) {
   return `rgba(${r}, ${g}, ${b}, ${clampAdStudioNumber(opacity, 0, 1, 1)})`;
 }
 
+function createSearchId(prefix = "places") {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getPlacesBranches() {
+  return parseList(elements.placesIndustryInput.value);
+}
+
+function getPlacesCities() {
+  return parseList(elements.placesCityInput.value).map(titleCase);
+}
+
+function getPlacesBranchKeys() {
+  return new Set(getPlacesBranches().map((branch) => normalizeText(branch)));
+}
+
+function isPlacesSegmentedSaveMode() {
+  return Boolean(elements.placesSeparateListsToggle?.checked);
+}
+
+function addUniqueSuggestion(suggestions, seen, value, source, currentKeys) {
+  const cleanValue = String(value || "").trim();
+  if (!cleanValue) {
+    return;
+  }
+  const key = normalizeText(cleanValue);
+  if (!key || seen.has(key) || currentKeys.has(key)) {
+    return;
+  }
+  seen.add(key);
+  suggestions.push({ value: cleanValue, source });
+}
+
+function suggestionGroupMatchesTerm(group, term) {
+  const key = normalizeText(term);
+  if (!key) {
+    return false;
+  }
+  return group.some((candidate) => {
+    const candidateKey = normalizeText(candidate);
+    return candidateKey === key || (key.length >= 4 && candidateKey.includes(key)) || (candidateKey.length >= 4 && key.includes(candidateKey));
+  });
+}
+
+function addCompoundQuerySuggestions(suggestions, seen, term, currentKeys) {
+  const cleanTerm = String(term || "").trim();
+  const normalized = normalizeText(cleanTerm);
+  const suffix = QUERY_SUGGESTION_SUFFIXES.find((candidate) => normalized.endsWith(normalizeText(candidate)) && normalized.length > normalizeText(candidate).length + 2);
+  if (!suffix || /\s/.test(cleanTerm)) {
+    return;
+  }
+  const base = cleanTerm.slice(0, cleanTerm.length - suffix.length).trim().replace(/[-\s]+$/g, "");
+  if (base.length > 2) {
+    addUniqueSuggestion(suggestions, seen, `${base} ${suffix}`, "Variant", currentKeys);
+  }
+}
+
+function buildPlaceQuerySuggestions(branches = getPlacesBranches()) {
+  const sourceBranches = branches.filter(Boolean);
+  const currentKeys = getPlacesBranchKeys();
+  const suggestions = [];
+  const seen = new Set();
+
+  sourceBranches.forEach((branch) => {
+    QUERY_SUGGESTION_GROUPS
+      .filter((group) => suggestionGroupMatchesTerm(group, branch))
+      .flatMap((group) => group)
+      .forEach((term) => addUniqueSuggestion(suggestions, seen, term, "Förslag", currentKeys));
+
+    MANUAL_BRANCH_TAXONOMY
+      .filter((entry) => suggestionGroupMatchesTerm([entry.label, ...entry.aliases], branch))
+      .flatMap((entry) => [entry.label, ...entry.aliases])
+      .forEach((term) => addUniqueSuggestion(suggestions, seen, term, "Branschalias", currentKeys));
+
+    getKnownManualBranches()
+      .filter((term) => suggestionGroupMatchesTerm([term], branch))
+      .forEach((term) => addUniqueSuggestion(suggestions, seen, term, "Befintlig bransch", currentKeys));
+
+    addCompoundQuerySuggestions(suggestions, seen, branch, currentKeys);
+  });
+
+  return suggestions.slice(0, 18);
+}
+
+function generatePlaceQuerySuggestionsAction() {
+  const branches = getPlacesBranches();
+  if (!branches.length) {
+    elements.placesFeedback.textContent = "Skriv minst en bransch först.";
+    return;
+  }
+
+  const suggestions = buildPlaceQuerySuggestions(branches);
+  state.placesQuerySuggestions = suggestions;
+  state.placesQuerySuggestionSelection = Object.fromEntries(suggestions.map((suggestion) => [normalizeText(suggestion.value), true]));
+  elements.placesFeedback.textContent = suggestions.length
+    ? `${suggestions.length} queryförslag genererade. Välj de du vill lägga till.`
+    : "Inga lokala queryförslag hittades. Lägg till fler sökord manuellt i branschfältet.";
+  renderCampaigns();
+}
+
+function applySelectedPlaceQuerySuggestions() {
+  const selectedSuggestions = state.placesQuerySuggestions
+    .filter((suggestion) => state.placesQuerySuggestionSelection[normalizeText(suggestion.value)] !== false)
+    .map((suggestion) => suggestion.value);
+  if (!selectedSuggestions.length) {
+    elements.placesFeedback.textContent = "Välj minst ett queryförslag att lägga till.";
+    return;
+  }
+
+  const currentBranches = getPlacesBranches();
+  const mergedBranches = [];
+  const seen = new Set();
+  [...currentBranches, ...selectedSuggestions].forEach((branch) => {
+    const cleanBranch = String(branch || "").trim();
+    const key = normalizeText(cleanBranch);
+    if (!cleanBranch || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    mergedBranches.push(cleanBranch);
+  });
+  elements.placesIndustryInput.value = mergedBranches.join(", ");
+  state.placesQuerySuggestions = [];
+  state.placesQuerySuggestionSelection = {};
+  elements.placesFeedback.textContent = `${selectedSuggestions.length} queryförslag lades till i branschfältet.`;
+  renderCampaigns();
+}
+
+function clearPlaceQuerySuggestions() {
+  state.placesQuerySuggestions = [];
+  state.placesQuerySuggestionSelection = {};
+  renderCampaigns();
+}
+
+function buildGenericBranchTemplates(branch) {
+  const term = String(branch || "").trim();
+  if (!term) {
+    return [];
+  }
+  return [`${term} {city}`];
+}
+
+function getBranchQueryTemplatesForPreview(branch) {
+  return buildGenericBranchTemplates(branch);
+}
+
+function getPlannedPlacesQueries(branches = getPlacesBranches(), cities = getPlacesCities()) {
+  return branches
+    .flatMap((branch) =>
+      cities.flatMap((city) =>
+        getBranchQueryTemplatesForPreview(branch).map((template) => template.replace("{city}", city))
+      )
+    )
+    .filter(Boolean);
+}
+
+function estimatePlacesApiCalls(queryCount, maxResults) {
+  const effectiveMax = Math.min(Math.max(1, Number(maxResults) || 60), 60);
+  const pageCalls = Math.ceil(effectiveMax / 20);
+  return queryCount * (pageCalls + effectiveMax);
+}
+
+function getPlacesProgressPercent(progress) {
+  if (!progress) {
+    return 0;
+  }
+  if (progress.stage === "complete") {
+    return 100;
+  }
+  if (progress.stage === "error") {
+    return 0;
+  }
+  const total = Math.max(1, Number(progress.totalQueries) || 1);
+  const completed = Math.max(0, Number(progress.completedQueries) || 0);
+  const partial = Math.min(1, Math.max(0, Number(progress.queryProgress) || 0));
+  return Math.min(99, Math.max(0, Math.round(((completed + partial) / total) * 100)));
+}
+
+function formatPlacesProgressText(progress) {
+  if (!progress) {
+    return "Förbereder sökning...";
+  }
+  const total = Number(progress.totalQueries) || 0;
+  const current = Number(progress.currentQueryIndex) || 0;
+  const query = progress.query ? `"${progress.query}"` : "";
+
+  if (progress.stage === "complete") {
+    return "Klar. Resultaten är inlästa.";
+  }
+  if (progress.stage === "error") {
+    return progress.error || "Sökningen avbröts på grund av ett fel.";
+  }
+  if (progress.stage === "started") {
+    const estimate = progress.estimatedApiCalls ? ` Upp till cirka ${progress.estimatedApiCalls} API-anrop.` : "";
+    return `Startar ${total} queries.${estimate}`;
+  }
+  if (progress.stage === "details-start") {
+    return `Query ${current}/${total}: hämtar detaljer för ${progress.detailTotal || 0} träffar ${query}`;
+  }
+  if (progress.stage === "details") {
+    return `Query ${current}/${total}: detaljer ${progress.detailIndex || 0}/${progress.detailTotal || 0} ${query}`;
+  }
+  if (progress.stage === "page") {
+    return `Query ${current}/${total}: hämtar träffar (${progress.rawCount || 0} råa) ${query}`;
+  }
+  if (progress.stage === "query-complete") {
+    return `Klar med query ${progress.completedQueries || current}/${total}: ${progress.relevantCount || 0} relevanta träffar`;
+  }
+  return `Query ${current}/${total}: ${query || "förbereder"}`;
+}
+
+function renderPlacesProgress() {
+  if (!elements.placesProgress) {
+    return;
+  }
+  const progress = state.placesProgress;
+  elements.placesProgress.hidden = !progress;
+  if (!progress) {
+    return;
+  }
+  const percent = getPlacesProgressPercent(progress);
+  if (elements.placesProgressText) {
+    elements.placesProgressText.textContent = formatPlacesProgressText(progress);
+  }
+  if (elements.placesProgressPercent) {
+    elements.placesProgressPercent.textContent = `${percent}%`;
+  }
+  if (elements.placesProgressBar) {
+    elements.placesProgressBar.style.width = `${percent}%`;
+  }
+}
+
 async function searchPlacesAction() {
   if (state.placesSearchBusy || state.placesSaveBusy) {
     return;
   }
   const apiKey = elements.apiKeyInput.value.trim();
-  const branch = titleCase(elements.placesIndustryInput.value.trim());
-  const cities = parseList(elements.placesCityInput.value).map(titleCase);
+  const branches = getPlacesBranches();
+  const cities = getPlacesCities();
   const rawMaxResults = Number(elements.placesMaxResultsInput.value);
   const maxResults = Number.isFinite(rawMaxResults) && rawMaxResults > 0 ? rawMaxResults : undefined;
+  const plannedQueries = getPlannedPlacesQueries(branches, cities);
+  const searchId = createSearchId();
+  const estimatedApiCalls = estimatePlacesApiCalls(plannedQueries.length, maxResults);
+
+  if (estimatedApiCalls > MAX_PLACES_API_CALLS_PER_SEARCH) {
+    elements.placesFeedback.textContent =
+      `Sökningen stoppades innan Google debiterades: den kan kräva upp till cirka ${estimatedApiCalls} API-anrop. ` +
+      `Dela upp sökningen i färre branscher/städer eller sänk max träffar per query. Säkerhetsgräns: ${MAX_PLACES_API_CALLS_PER_SEARCH} API-anrop.`;
+    return;
+  }
 
   state.placesSearchBusy = true;
-  elements.placesFeedback.textContent = "Kör multi-search via Google Places...";
+  state.placesProgress = {
+    searchId,
+    stage: "started",
+    totalQueries: plannedQueries.length,
+    completedQueries: 0,
+    currentQueryIndex: 0,
+    queryProgress: 0,
+    estimatedApiCalls
+  };
+  elements.placesFeedback.textContent = `Kör multi-search via Google Places: ${plannedQueries.length} queries, upp till cirka ${estimatedApiCalls} API-anrop.`;
   renderCampaigns();
   try {
     await window.desktopApp.saveSettings({
@@ -3631,21 +5659,37 @@ async function searchPlacesAction() {
     });
     const response = await window.desktopApp.searchPlaces({
       apiKey,
-      branch,
-      cities: cities.join(", "),
-      maxResults
+      branches,
+      cities,
+      maxResults,
+      searchId
     });
     state.placesResults = response.places;
     state.placesMeta = response.meta;
     state.placesSelection = Object.fromEntries(response.places.map((lead) => [lead.id, true]));
+    state.placesProgress = {
+      ...(state.placesProgress || {}),
+      stage: "complete",
+      totalQueries: response.meta.queryCount,
+      completedQueries: response.meta.queryCount,
+      currentQueryIndex: response.meta.queryCount,
+      queryProgress: 1
+    };
+    const segmentCount = response.meta.segmentBreakdown?.length || 0;
+    const segmentLabel = segmentCount ? ` · ${segmentCount} listsegment` : "";
     elements.placesFeedback.textContent = response.places.length
-      ? `${response.meta.queryCount} queries · ${response.meta.rawResults} råa träffar · ${response.meta.uniqueResults} unika leads · ${response.meta.duplicatesRemoved} dubletter · ${response.meta.filteredOut} bortfiltrerade · ${getSelectedPlacesResults().length} valda · ${response.meta.apiCalls} API-anrop${response.meta.notice ? ` · ${response.meta.notice}` : ""}`
+      ? `${response.meta.queryCount} queries · ${response.meta.rawResults} råa träffar · ${response.meta.uniqueResults} unika leads${segmentLabel} · ${response.meta.duplicatesRemoved} dubletter · ${response.meta.filteredOut} bortfiltrerade · ${getSelectedPlacesResults().length} valda · ${response.meta.apiCalls} API-anrop${response.meta.notice ? ` · ${response.meta.notice}` : ""}`
       : "Tomt API-svar: inga träffar.";
     renderCampaigns();
   } catch (error) {
     state.placesResults = [];
     state.placesMeta = null;
     state.placesSelection = {};
+    state.placesProgress = {
+      ...(state.placesProgress || { searchId }),
+      stage: "error",
+      error: error.message
+    };
     elements.placesFeedback.textContent = error.message;
     renderCampaigns();
   } finally {
@@ -3667,19 +5711,30 @@ async function savePlacesAsCampaign() {
   state.placesSaveBusy = true;
   renderCampaigns();
   try {
-    const branch = titleCase(elements.placesIndustryInput.value.trim());
-    const cities = parseList(elements.placesCityInput.value).map(titleCase);
+    const branches = getPlacesBranches();
+    const cities = getPlacesCities();
     const selectedCampaignId = elements.placesCampaignSelect?.value || "";
+
+    if (isPlacesSegmentedSaveMode()) {
+      const result = await savePlacesAsSegmentedCampaigns(selectedLeads, branches, cities);
+      elements.placesFeedback.textContent =
+        `Skapade/uppdaterade ${result.listCount} listor. ` +
+        `Importerade ${result.imported}, redan i listan ${result.alreadyInList}, dubletter i andra listor ${result.duplicates}, skippade ${result.skipped}.`;
+      await refreshState();
+      return;
+    }
+
     let campaign = state.data.campaigns.find((item) => item.id === selectedCampaignId);
 
     if (!campaign) {
       campaign = await window.desktopApp.createCampaign({
-        name: elements.campaignNameInput.value.trim() || [branch, cities.join(", ")].filter(Boolean).join(" ") || "Ny lista",
+        name: elements.campaignNameInput.value.trim() || [branches.join(", "), cities.join(", ")].filter(Boolean).join(" ") || "Ny lista",
         sourceType: "google-places",
-        searchQuery: [branch, cities.join(", ")].filter(Boolean).join(" "),
+        searchQuery: [branches.join(", "), cities.join(", ")].filter(Boolean).join(" "),
         cities,
         targetMarkets: cities,
-        normalizedBranch: branch,
+        categories: branches,
+        normalizedBranch: branches[0] || "",
         dailyTarget: Number(elements.planningDailyTargetInput.value) || 40,
         startDate: formatLocalDate(new Date())
       });
@@ -3701,6 +5756,82 @@ async function savePlacesAsCampaign() {
     state.placesSaveBusy = false;
     render();
   }
+}
+
+function getPlacesLeadSegment(lead, fallbackBranches = [], fallbackCities = []) {
+  const branch = titleCase(lead.normalizedBranch || lead.category || fallbackBranches[0] || "Okategoriserat");
+  const city = titleCase(lead.targetMarketCity || lead.normalizedCity || lead.city || fallbackCities[0] || "Okänd stad");
+  return { branch, city, key: `${normalizeText(branch)}|${normalizeText(city)}` };
+}
+
+function findCampaignForPlacesSegment(campaigns, branch, city) {
+  const branchKey = normalizeText(branch);
+  const cityKey = normalizeText(city);
+  return campaigns.find((campaign) => {
+    const context = getCampaignManualContext(campaign);
+    const campaignBranch = normalizeText(campaign.normalizedBranch || context.branch);
+    const campaignCities = (campaign.targetMarkets || campaign.cities || [])
+      .concat(context.city || "")
+      .map((value) => normalizeText(value))
+      .filter(Boolean);
+    return campaignBranch === branchKey && campaignCities.includes(cityKey);
+  });
+}
+
+function groupPlacesLeadsBySegment(leads, fallbackBranches, fallbackCities) {
+  const groups = new Map();
+  leads.forEach((lead) => {
+    const segment = getPlacesLeadSegment(lead, fallbackBranches, fallbackCities);
+    if (!groups.has(segment.key)) {
+      groups.set(segment.key, { ...segment, leads: [] });
+    }
+    groups.get(segment.key).leads.push(lead);
+  });
+  return [...groups.values()].sort((left, right) =>
+    left.branch.localeCompare(right.branch, "sv") ||
+    left.city.localeCompare(right.city, "sv")
+  );
+}
+
+async function savePlacesAsSegmentedCampaigns(selectedLeads, branches, cities) {
+  const groups = groupPlacesLeadsBySegment(selectedLeads, branches, cities);
+  const availableCampaigns = [...state.data.campaigns];
+  const totals = {
+    listCount: groups.length,
+    imported: 0,
+    alreadyInList: 0,
+    duplicates: 0,
+    skipped: 0
+  };
+
+  for (const group of groups) {
+    let campaign = findCampaignForPlacesSegment(availableCampaigns, group.branch, group.city);
+    if (!campaign) {
+      campaign = await window.desktopApp.createCampaign({
+        name: `${group.branch} - ${group.city}`,
+        sourceType: "google-places",
+        searchQuery: [group.branch, group.city].filter(Boolean).join(" "),
+        cities: [group.city],
+        targetMarkets: [group.city],
+        categories: [group.branch],
+        normalizedBranch: group.branch,
+        dailyTarget: Number(elements.planningDailyTargetInput.value) || 40,
+        startDate: formatLocalDate(new Date())
+      });
+      availableCampaigns.unshift(campaign);
+    }
+
+    const result = await window.desktopApp.importLeads({
+      leads: group.leads,
+      options: { listId: campaign.id }
+    });
+    totals.imported += result.imported || 0;
+    totals.alreadyInList += result.alreadyInList || 0;
+    totals.duplicates += result.duplicates || 0;
+    totals.skipped += result.skipped || 0;
+  }
+
+  return totals;
 }
 
 async function importCsvAction(event) {
@@ -4035,6 +6166,9 @@ function openEditLeadModal(leadId = state.selectedLeadId) {
   elements.editLeadTitle.textContent = lead.companyName || "Kunduppgifter";
   elements.editCompanyNameInput.value = lead.companyName || "";
   elements.editPhoneInput.value = lead.phone || "";
+  if (elements.editExtraPhonesInput) {
+    elements.editExtraPhonesInput.value = (lead.extraPhones || []).join(", ");
+  }
   elements.editContactInput.value = lead.contactName || "";
   elements.editWebsiteInput.value = lead.website || "";
   elements.editAddressInput.value = lead.address || "";
@@ -4042,6 +6176,9 @@ function openEditLeadModal(leadId = state.selectedLeadId) {
   elements.editBranchInput.value = lead.normalizedBranch || lead.category || "";
   renderEditBranchSuggestions();
   renderEditCampaignOptions(lead.listId || "");
+  if (elements.editSaleValueInput) {
+    elements.editSaleValueInput.value = Number(lead.saleValue || lead.orderValue || 0) || "";
+  }
   elements.editLeadFeedback.textContent = "";
   elements.editLeadModal.hidden = false;
   window.requestAnimationFrame(() => elements.editCompanyNameInput?.focus());
@@ -4113,6 +6250,7 @@ async function saveEditLeadAction() {
     patch: {
       companyName,
       phone: elements.editPhoneInput.value.trim(),
+      extraPhones: parseList(elements.editExtraPhonesInput?.value || ""),
       contactName: elements.editContactInput.value.trim(),
       website: elements.editWebsiteInput.value.trim(),
       address: elements.editAddressInput.value.trim(),
@@ -4121,7 +6259,9 @@ async function saveEditLeadAction() {
       targetMarketCity: city,
       category: branch,
       normalizedBranch: branch,
-      listId
+      listId,
+      saleValue: Number(elements.editSaleValueInput?.value || 0) || 0,
+      orderValue: Number(elements.editSaleValueInput?.value || 0) || 0
     }
   });
 
@@ -4298,6 +6438,14 @@ async function openSelectedLeadLink(field, useTel = false) {
 
   const targetUrl = useTel ? `tel:${String(lead[field]).replace(/[^\d+]/g, "")}` : lead[field];
   if (useTel) {
+    await window.desktopApp.createCallIntent({
+      leadId: lead.id,
+      number: lead[field],
+      selectedIndustry: getLeadBranchLabel(lead),
+      selectedCity: getLeadCityLabel(lead),
+      selectedListId: lead.listId || "",
+      currentQueueId: state.workMode === "flow" ? [state.workQueue.campaignId, state.workQueue.plannedDate].filter(Boolean).join(":") : ""
+    });
     await window.desktopApp.logLeadEvent({
       leadId: lead.id,
       type: "call",
@@ -4450,10 +6598,15 @@ function openCustomerFilter({ status = "", campaignId = "", resetTextFilters = t
 }
 
 function getQueryPreviewCards() {
-  const branchKey = normalizeText(elements.placesIndustryInput.value);
-  const cities = parseList(elements.placesCityInput.value).map(titleCase);
-  const templates = BRANCH_QUERY_TEMPLATES[branchKey] || (elements.placesIndustryInput.value.trim() ? [`${elements.placesIndustryInput.value.trim()} {city}`] : []);
-  const queries = cities.flatMap((city) => templates.map((template) => template.replace("{city}", city))).filter(Boolean);
+  const branches = getPlacesBranches();
+  const cities = getPlacesCities();
+  const queries = branches
+    .flatMap((branch) =>
+      cities.flatMap((city) =>
+        getBranchQueryTemplatesForPreview(branch).map((template) => template.replace("{city}", city))
+      )
+    )
+    .filter(Boolean);
   const source = state.placesMeta?.perQuery?.length
     ? state.placesMeta.perQuery.map((entry) => ({
         query: entry.query,
@@ -4470,6 +6623,49 @@ function getQueryPreviewCards() {
     card.innerHTML = `<strong>${escapeHtml(entry.query)}</strong><p class="meta-line">${escapeHtml(entry.summary)}</p>`;
     return card;
   });
+}
+
+function renderPlaceQuerySuggestions(placesBusy = false) {
+  if (!elements.placesQuerySuggestionPanel || !elements.placesQuerySuggestionList) {
+    return;
+  }
+
+  const suggestions = state.placesQuerySuggestions;
+  elements.placesQuerySuggestionPanel.hidden = !suggestions.length;
+  if (!suggestions.length) {
+    elements.placesQuerySuggestionList.innerHTML = "";
+    return;
+  }
+
+  elements.placesQuerySuggestionList.innerHTML = "";
+  suggestions.forEach((suggestion) => {
+    const key = normalizeText(suggestion.value);
+    const selected = state.placesQuerySuggestionSelection[key] !== false;
+    const label = document.createElement("label");
+    label.className = "query-suggestion-chip";
+    label.innerHTML = `
+      <input type="checkbox" data-query-suggestion="${escapeHtml(key)}" ${selected ? "checked" : ""} ${placesBusy ? "disabled" : ""} />
+      <span>${escapeHtml(suggestion.value)}</span>
+      <em>${escapeHtml(suggestion.source)}</em>
+    `;
+    label.querySelector("input")?.addEventListener("change", (event) => {
+      state.placesQuerySuggestionSelection[key] = event.target.checked;
+      renderCampaigns();
+    });
+    elements.placesQuerySuggestionList.appendChild(label);
+  });
+
+  const selectedCount = suggestions.filter((suggestion) => state.placesQuerySuggestionSelection[normalizeText(suggestion.value)] !== false).length;
+  const queryCount = selectedCount * Math.max(1, getPlacesCities().length || 1);
+  if (elements.placesQuerySuggestionSummary) {
+    elements.placesQuerySuggestionSummary.textContent = `${selectedCount}/${suggestions.length} valda · ${queryCount} query${queryCount === 1 ? "" : "s"}`;
+  }
+  if (elements.applyPlaceQuerySuggestionsButton) {
+    elements.applyPlaceQuerySuggestionsButton.disabled = placesBusy || !selectedCount;
+  }
+  if (elements.clearPlaceQuerySuggestionsButton) {
+    elements.clearPlaceQuerySuggestionsButton.disabled = placesBusy;
+  }
 }
 
 function derivePlanningDataFromState() {
@@ -4895,7 +7091,7 @@ function parseCsv(text) {
 
 function parseList(value) {
   return String(value || "")
-    .split(",")
+    .split(/[,;\n\r]+/)
     .map((item) => item.trim())
     .filter(Boolean);
 }
@@ -5180,7 +7376,13 @@ function escapeHtml(value) {
 
 function safeRenderSection(sectionName, renderer) {
   try {
-    renderer();
+    const result = renderer();
+    if (result && typeof result.catch === "function") {
+      result.catch((error) => {
+        console.error(`[render:${sectionName}]`, error);
+        reportRuntimeError(`Fel i vy: ${sectionName}`, error);
+      });
+    }
   } catch (error) {
     console.error(`[render:${sectionName}]`, error);
     reportRuntimeError(`Fel i vy: ${sectionName}`, error);
@@ -5232,9 +7434,14 @@ function updatePlacesSelectionFeedback() {
   if (!state.placesMeta) {
     return;
   }
-  const selectedCount = getSelectedPlacesResults().length;
+  const selectedLeads = getSelectedPlacesResults();
+  const selectedCount = selectedLeads.length;
   const ignoredCount = Math.max(0, state.placesResults.length - selectedCount);
-  elements.placesFeedback.textContent = `${state.placesMeta.queryCount} queries · ${state.placesMeta.rawResults} råa träffar · ${state.placesMeta.uniqueResults} unika leads · ${state.placesMeta.duplicatesRemoved} dubletter · ${state.placesMeta.filteredOut + ignoredCount} bortfiltrerade/ignorerade · ${selectedCount} valda · ${state.placesMeta.apiCalls} API-anrop${state.placesMeta.notice ? ` · ${state.placesMeta.notice}` : ""}`;
+  const segmentCount = isPlacesSegmentedSaveMode()
+    ? groupPlacesLeadsBySegment(selectedLeads, getPlacesBranches(), getPlacesCities()).length
+    : state.placesMeta.segmentBreakdown?.length || 0;
+  const segmentLabel = segmentCount ? ` · ${segmentCount} listsegment` : "";
+  elements.placesFeedback.textContent = `${state.placesMeta.queryCount} queries · ${state.placesMeta.rawResults} råa träffar · ${state.placesMeta.uniqueResults} unika leads${segmentLabel} · ${state.placesMeta.duplicatesRemoved} dubletter · ${state.placesMeta.filteredOut + ignoredCount} bortfiltrerade/ignorerade · ${selectedCount} valda · ${state.placesMeta.apiCalls} API-anrop${state.placesMeta.notice ? ` · ${state.placesMeta.notice}` : ""}`;
 }
 
 function getActiveQueue() {
@@ -5647,26 +7854,39 @@ function renderCustomers() {
     .sort((left, right) => left[0].localeCompare(right[0], "sv"))
     .forEach(([branch, marketMap]) => {
       const totalCount = [...marketMap.values()].reduce((sum, leads) => sum + leads.length, 0);
-      const branchNode = document.createElement("details");
-      branchNode.className = "catalog-group";
-      branchNode.open = true;
-      branchNode.innerHTML = `<summary>${escapeHtml(branch)} <span>${totalCount}</span></summary>`;
+      const branchNode = document.createElement("section");
+      branchNode.className = "customer-catalog-group";
+      branchNode.innerHTML = `
+        <header class="customer-catalog-head">
+          <strong>${escapeHtml(branch)}</strong>
+          <span>${marketMap.size} ${marketMap.size === 1 ? "stad" : "städer"}</span>
+          <b>${totalCount}</b>
+        </header>
+      `;
+      const marketRows = document.createElement("div");
+      marketRows.className = "customer-catalog-markets";
 
       [...marketMap.entries()]
         .sort((left, right) => left[0].localeCompare(right[0], "sv"))
         .forEach(([targetMarket, marketLeads]) => {
           const marketNode = document.createElement("details");
-          marketNode.className = "catalog-subgroup";
-          marketNode.innerHTML = `<summary>${escapeHtml(targetMarket)} <span>${marketLeads.length}</span></summary>`;
+          marketNode.className = "customer-market-row";
+          marketNode.innerHTML = `
+            <summary>
+              <span>${escapeHtml(targetMarket)}</span>
+              <b>${marketLeads.length}</b>
+            </summary>
+          `;
           const rows = document.createElement("div");
           rows.className = "catalog-rows";
           marketLeads
             .sort((left, right) => left.companyName.localeCompare(right.companyName, "sv"))
             .forEach((lead) => rows.appendChild(createCatalogLeadRow(lead)));
           marketNode.appendChild(rows);
-          branchNode.appendChild(marketNode);
+          marketRows.appendChild(marketNode);
         });
 
+      branchNode.appendChild(marketRows);
       elements.customersCatalog.appendChild(branchNode);
     });
 }
@@ -5907,6 +8127,8 @@ function renderCampaignCatalog(campaigns) {
 
 function renderCampaigns() {
   const placesBusy = state.placesSearchBusy || state.placesSaveBusy;
+  renderPlacesProgress();
+  renderPlaceQuerySuggestions(placesBusy);
   renderSimpleList(
     elements.placesQueryStats,
     getQueryPreviewCards(),
@@ -5925,6 +8147,7 @@ function renderCampaigns() {
             <input type="checkbox" data-place-select="${escapeHtml(lead.id)}" ${selected ? "checked" : ""} ${placesBusy ? "disabled" : ""} />
             <strong>${escapeHtml(lead.companyName)}</strong>
           </label>
+          <span class="status-badge">${escapeHtml(lead.normalizedBranch || lead.category || "Okänd bransch")}</span>
           <span class="status-badge">${escapeHtml(lead.targetMarketCity || lead.normalizedCity || lead.city || "Okänd stad")}</span>
         </div>
         <p class="meta-line">${escapeHtml(lead.phone || "Telefon saknas")} · ${escapeHtml(lead.website || "Hemsida saknas")}</p>
@@ -5960,21 +8183,36 @@ function renderCampaigns() {
   );
 
   const selectedPlacesCount = getSelectedPlacesResults().length;
-  const targetCampaign = state.data.campaigns.find((campaign) => campaign.id === (elements.placesCampaignSelect?.value || ""));
+  const segmentedSaveMode = isPlacesSegmentedSaveMode();
+  const selectedSegmentCount = segmentedSaveMode
+    ? groupPlacesLeadsBySegment(getSelectedPlacesResults(), getPlacesBranches(), getPlacesCities()).length
+    : 0;
+  const targetCampaign = segmentedSaveMode
+    ? null
+    : state.data.campaigns.find((campaign) => campaign.id === (elements.placesCampaignSelect?.value || ""));
   elements.searchPlacesButton.disabled = placesBusy;
+  elements.searchPlacesButton.textContent = state.placesSearchBusy ? "Söker..." : "Kör multi-search";
+  if (elements.generatePlaceQuerySuggestionsButton) {
+    elements.generatePlaceQuerySuggestionsButton.disabled = placesBusy;
+  }
   elements.selectAllPlacesButton.disabled = placesBusy || !state.placesResults.length;
   elements.clearAllPlacesButton.disabled = placesBusy || !state.placesResults.length;
   elements.savePlacesCampaignButton.disabled = placesBusy || !selectedPlacesCount;
   elements.savePlacesCampaignButton.textContent = state.placesSaveBusy
     ? "Sparar..."
-    : targetCampaign
+    : segmentedSaveMode
+      ? `Skapa ${selectedSegmentCount} listor (${selectedPlacesCount} leads)`
+      : targetCampaign
       ? `Lägg till valda i ${targetCampaign.name} (${selectedPlacesCount})`
       : `Spara valda till ny lista (${selectedPlacesCount})`;
   if (elements.placesCampaignSelect) {
-    elements.placesCampaignSelect.disabled = placesBusy;
+    elements.placesCampaignSelect.disabled = placesBusy || segmentedSaveMode;
+  }
+  if (elements.placesSeparateListsToggle) {
+    elements.placesSeparateListsToggle.disabled = placesBusy;
   }
   if (elements.campaignNameInput) {
-    elements.campaignNameInput.disabled = placesBusy || Boolean(targetCampaign);
+    elements.campaignNameInput.disabled = placesBusy || segmentedSaveMode || Boolean(targetCampaign);
   }
 
   const campaigns = getVisibleCampaigns();

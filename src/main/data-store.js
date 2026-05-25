@@ -7,13 +7,21 @@ const {
   findDuplicateLead,
   normalizeCampaign,
   normalizeCallRecord,
+  normalizeCallIntent,
   normalizeLead,
   normalizeLogEntry,
   normalizeReminder,
-  normalizeScheduleItem
+  normalizeScheduleItem,
+  normalizeTelavoxSync
 } = require("./domain");
 const { inferBranchFromContext, inferCityFromContext, inferCountryFromContext, inferLocalityFromContext, normalizePhone } = require("./data/normalizers");
+const { normalizePhoneNumber, phonesMatch } = require("./phone-utils");
 const { buildMonthlyPlan } = require("./engines/planning-engine");
+const {
+  TELAVOX_LEGACY_LIMITATION,
+  buildCallAttributions,
+  buildStatisticsDecisionEngine
+} = require("./engines/statistics-engine");
 const { fetchTelavoxCalls, fetchTelavoxRecording } = require("./services/telavox-service");
 
 function timestampForFileName() {
@@ -113,6 +121,8 @@ class DataStore {
       campaigns: Array.isArray(parsed.campaigns) ? dedupeById(parsed.campaigns.map(normalizeCampaign)) : [],
       scheduleItems: Array.isArray(parsed.scheduleItems) ? parsed.scheduleItems.map(normalizeScheduleItem) : [],
       callRecords: Array.isArray(parsed.callRecords) ? parsed.callRecords.map(normalizeCallRecord) : [],
+      callIntents: Array.isArray(parsed.callIntents) ? parsed.callIntents.map(normalizeCallIntent) : [],
+      telavoxSyncs: Array.isArray(parsed.telavoxSyncs) ? parsed.telavoxSyncs.map(normalizeTelavoxSync) : [],
       settings: { ...createEmptyState().settings, ...(parsed.settings || {}) }
     };
     this.refreshAllCampaignCounters();
@@ -227,6 +237,10 @@ class DataStore {
 
   getState() {
     return structuredClone(this.state);
+  }
+
+  getStatistics(payload = {}) {
+    return buildStatisticsDecisionEngine(this.state, payload);
   }
 
   async save() {
@@ -387,6 +401,7 @@ class DataStore {
     const trackedFields = [
       ["companyName", "Foretagsnamn"],
       ["phone", "Telefon"],
+      ["extraPhones", "Extra telefoner"],
       ["contactName", "Kontaktperson"],
       ["website", "Hemsida"],
       ["address", "Adress"],
@@ -394,6 +409,7 @@ class DataStore {
       ["normalizedCity", "Stad"],
       ["normalizedBranch", "Bransch"],
       ["listId", "Lista"],
+      ["saleValue", "Ordervarde"],
       ["notes", "Anteckningar"]
     ];
     const previous = Object.fromEntries(trackedFields.map(([field]) => [field, lead[field] ?? ""]));
@@ -530,6 +546,98 @@ class DataStore {
     return lead;
   }
 
+  async createCallIntent(payload = {}) {
+    const lead = this.state.leads.find((item) => item.id === payload.leadId);
+    const intent = normalizeCallIntent({
+      leadId: payload.leadId || "",
+      number: payload.number || lead?.phone || "",
+      selectedIndustry: payload.selectedIndustry || lead?.normalizedBranch || lead?.category || "",
+      selectedCity: payload.selectedCity || lead?.targetMarketCity || lead?.normalizedCity || lead?.city || "",
+      selectedListId: payload.selectedListId || lead?.listId || "",
+      currentQueueId: payload.currentQueueId || "",
+      timestamp: payload.timestamp || new Date().toISOString()
+    });
+
+    this.state.callIntents.unshift(intent);
+    this.state.callIntents = this.state.callIntents.slice(0, 1000);
+    await this.save();
+    return intent;
+  }
+
+  async resolveTelavoxCall(payload = {}) {
+    const record = this.state.callRecords.find((item) => item.id === payload.callRecordId);
+    if (!record) {
+      throw new Error("Telavox-samtalet hittades inte.");
+    }
+
+    const action = payload.action || "";
+    if (action === "ignore" || action === "private_internal") {
+      record.manualResolution = {
+        type: action === "private_internal" ? "private_internal" : "ignore",
+        reason: payload.reason || (action === "private_internal" ? "Privat/internt" : "Ignorerad"),
+        resolvedAt: new Date().toISOString()
+      };
+      record.leadId = "";
+    } else if (action === "link_lead" || action === "add_extra_phone") {
+      const lead = this.state.leads.find((item) => item.id === payload.leadId);
+      if (!lead) {
+        throw new Error("Lead hittades inte.");
+      }
+      if (action === "add_extra_phone") {
+        const phone = normalizePhoneNumber(record.remoteNumber || record.originalNumber || "");
+        const existing = new Set((lead.extraPhones || []).map((number) => normalizePhone(number)));
+        if (phone.normalizedNumber && !existing.has(phone.normalizedNumber)) {
+          lead.extraPhones = [...(lead.extraPhones || []), phone.displayNumber || phone.originalNumber];
+          lead.updatedAt = new Date().toISOString();
+        }
+      }
+      record.leadId = lead.id;
+      record.manualResolution = {
+        type: action,
+        leadId: lead.id,
+        matchType: action === "add_extra_phone" ? "extra_phone" : "exact_phone",
+        matchConfidence: action === "add_extra_phone" ? 0.95 : 1,
+        reason: action === "add_extra_phone" ? "Manuellt tillagt som extra nummer." : "Manuellt kopplad till lead.",
+        resolvedAt: new Date().toISOString()
+      };
+    } else if (action === "create_customer") {
+      const phone = normalizePhoneNumber(record.remoteNumber || record.originalNumber || "");
+      const creation = await this.createLead(
+        {
+          source: "manual",
+          sourceQuery: "telavox unmatched",
+          matchedQueries: ["telavox unmatched"],
+          companyName: payload.companyName || phone.displayNumber || record.remoteNumber || "Ny Telavox-kund",
+          phone: phone.displayNumber || phone.originalNumber,
+          normalizedBranch: payload.industry || "",
+          category: payload.industry || "",
+          normalizedCity: payload.city || "",
+          targetMarketCity: payload.city || "",
+          city: payload.city || "",
+          listId: payload.listId || "",
+          status: "Ny"
+        },
+        { skipSave: true }
+      );
+      record.leadId = creation.lead.id;
+      record.manualResolution = {
+        type: "create_customer",
+        leadId: creation.lead.id,
+        matchType: "exact_phone",
+        matchConfidence: 1,
+        reason: "Ny kund skapad fran omatchat Telavox-nummer.",
+        resolvedAt: new Date().toISOString()
+      };
+    } else {
+      throw new Error("Okand Telavox-atgard.");
+    }
+
+    record.updatedAt = new Date().toISOString();
+    this.applyAttributionsToCallRecords();
+    await this.save();
+    return record;
+  }
+
   async softDeleteLead(leadId) {
     const lead = this.state.leads.find((item) => item.id === leadId);
     if (!lead) {
@@ -616,7 +724,7 @@ class DataStore {
       withRecordings: true
     });
 
-    const matched = calls.filter((call) => phonesMatch(call.remoteNumber, lead.phone));
+    const matched = calls.filter((call) => doesTelavoxCallMatchLead(call, lead));
     const syncedIds = [];
 
     matched.forEach((call) => {
@@ -627,8 +735,10 @@ class DataStore {
         leadId: lead.id,
         provider: "telavox",
         externalId,
+        telavoxId: call.telavoxId || call.id || "",
         direction: call.direction,
         remoteNumber: call.remoteNumber,
+        originalNumber: call.originalNumber || call.remoteNumber,
         happenedAt: call.happenedAt,
         durationSeconds: call.durationSeconds,
         recordingId: call.recordingId,
@@ -642,6 +752,20 @@ class DataStore {
       }
       syncedIds.push(record.id);
     });
+
+    this.state.telavoxSyncs.unshift(normalizeTelavoxSync({
+      fromDate,
+      toDate: payload.toDate || "",
+      fetchedCount: calls.length,
+      inserted: syncedIds.length,
+      updated: 0,
+      matchedCount: matched.length,
+      unmatchedCount: Math.max(0, calls.length - matched.length),
+      limitation: TELAVOX_LEGACY_LIMITATION,
+      warning: TELAVOX_LEGACY_LIMITATION
+    }));
+    this.state.telavoxSyncs = this.state.telavoxSyncs.slice(0, 200);
+    this.applyAttributionsToCallRecords();
 
     this.state.logEntries.unshift(
       normalizeLogEntry({
@@ -659,6 +783,110 @@ class DataStore {
       matchedCount: matched.length,
       totalFetched: calls.length,
       fromDate,
+      coverage: this.getStatistics({ fromDate, toDate: payload.toDate || "" }).coverage,
+      calls: this.state.callRecords
+        .filter((item) => syncedIds.includes(item.id))
+        .sort((left, right) => new Date(right.happenedAt) - new Date(left.happenedAt))
+    };
+  }
+
+  async syncTelavoxPeriodCalls(payload = {}) {
+    const token = payload.token?.trim() || this.state.settings.telavoxToken?.trim();
+    if (!token) {
+      throw new Error("Spara en Telavox-token först.");
+    }
+
+    const fromDate = payload.fromDate || this.state.settings.telavoxFromDate || "";
+    const toDate = payload.toDate || "";
+    const calls = await fetchTelavoxCalls({
+      token,
+      fromDate,
+      toDate,
+      withRecordings: true
+    });
+
+    const syncedIds = [];
+    let inserted = 0;
+    let updated = 0;
+    let matchedCount = 0;
+    let unmatchedCount = 0;
+
+    calls.forEach((call) => {
+      const matchedLead = findLeadForTelavoxCall(this.state.leads, call);
+      const externalId = buildTelavoxCallExternalId(call);
+      const existingIndex = this.state.callRecords.findIndex((item) => item.externalId === externalId);
+      const previous = existingIndex >= 0 ? this.state.callRecords[existingIndex] : {};
+      const record = normalizeCallRecord({
+        ...previous,
+        leadId: matchedLead?.id || previous.leadId || "",
+        provider: "telavox",
+        externalId,
+        telavoxId: call.telavoxId || call.id || previous.telavoxId || "",
+        direction: call.direction,
+        remoteNumber: call.remoteNumber,
+        originalNumber: call.originalNumber || call.remoteNumber,
+        happenedAt: call.happenedAt,
+        durationSeconds: call.durationSeconds,
+        recordingId: call.recordingId,
+        updatedAt: new Date().toISOString()
+      });
+
+      if (record.leadId) {
+        matchedCount += 1;
+      } else {
+        unmatchedCount += 1;
+      }
+
+      if (existingIndex >= 0) {
+        this.state.callRecords[existingIndex] = record;
+        updated += 1;
+      } else {
+        this.state.callRecords.unshift(record);
+        inserted += 1;
+      }
+      syncedIds.push(record.id);
+    });
+
+    this.state.telavoxSyncs.unshift(normalizeTelavoxSync({
+      fromDate,
+      toDate,
+      fetchedCount: calls.length,
+      inserted,
+      updated,
+      matchedCount,
+      unmatchedCount,
+      limitation: TELAVOX_LEGACY_LIMITATION,
+      warning: TELAVOX_LEGACY_LIMITATION
+    }));
+    this.state.telavoxSyncs = this.state.telavoxSyncs.slice(0, 200);
+    this.applyAttributionsToCallRecords();
+    const syncedRecordsAfterAttribution = this.state.callRecords.filter((item) => syncedIds.includes(item.id));
+    matchedCount = syncedRecordsAfterAttribution.filter((item) => item.leadId).length;
+    unmatchedCount = syncedRecordsAfterAttribution.length - matchedCount;
+    if (this.state.telavoxSyncs[0]) {
+      this.state.telavoxSyncs[0].matchedCount = matchedCount;
+      this.state.telavoxSyncs[0].unmatchedCount = unmatchedCount;
+    }
+
+    this.state.logEntries.unshift(
+      normalizeLogEntry({
+        type: "telavox-sync",
+        title: "Telavox period synkad",
+        text: `${calls.length} samtal hämtades${fromDate ? ` från ${fromDate}` : ""}${toDate ? ` till ${toDate}` : ""}. ${matchedCount} matchade, ${unmatchedCount} omatchade.`
+      })
+    );
+
+    await this.save();
+
+    return {
+      totalFetched: calls.length,
+      inserted,
+      updated,
+      matchedCount,
+      unmatchedCount,
+      fromDate,
+      toDate,
+      coverage: this.getStatistics({ fromDate, toDate }).coverage,
       calls: this.state.callRecords
         .filter((item) => syncedIds.includes(item.id))
         .sort((left, right) => new Date(right.happenedAt) - new Date(left.happenedAt))
@@ -813,23 +1041,54 @@ class DataStore {
   refreshAllCampaignCounters() {
     this.state.campaigns.forEach((campaign) => this.refreshCampaignCounters(campaign.id));
   }
+
+  applyAttributionsToCallRecords() {
+    const attributions = buildCallAttributions({
+      calls: this.state.callRecords.filter((record) => record.provider === "telavox"),
+      leads: this.state.leads.filter((lead) => !lead.isDeleted),
+      logEntries: this.state.logEntries,
+      reminders: this.state.reminders,
+      callIntents: this.state.callIntents,
+      campaigns: this.state.campaigns,
+      settings: this.state.settings
+    });
+    const attributionById = new Map(attributions.map((item) => [item.id, item]));
+    this.state.callRecords = this.state.callRecords.map((record) => {
+      if (record.provider !== "telavox") {
+        return record;
+      }
+      const attribution = attributionById.get(record.id);
+      if (!attribution) {
+        return record;
+      }
+      return normalizeCallRecord({
+        ...record,
+        leadId: attribution.matchedLeadId || record.leadId || "",
+        normalizedNumber: attribution.normalizedNumber,
+        displayNumber: attribution.displayNumber,
+        attribution,
+        matchType: attribution.matchType,
+        matchConfidence: attribution.matchConfidence
+      });
+    });
+  }
 }
 
 function buildTelavoxCallExternalId(call) {
   return ["telavox", call.direction, call.happenedAt, normalizePhone(call.remoteNumber), call.recordingId || "none"].join(":");
 }
 
-function phonesMatch(left, right) {
-  const a = normalizePhone(left);
-  const b = normalizePhone(right);
-  if (!a || !b) {
-    return false;
-  }
-  if (a === b) {
-    return true;
-  }
-  const tailLength = Math.min(9, a.length, b.length);
-  return tailLength >= 7 && a.slice(-tailLength) === b.slice(-tailLength);
+function findLeadForTelavoxCall(leads, call) {
+  return leads.find((lead) => !lead.isDeleted && doesTelavoxCallMatchLead(call, lead)) ?? null;
+}
+
+function doesTelavoxCallMatchLead(call, lead) {
+  const numbers = [
+    lead.phone,
+    ...(Array.isArray(lead.extraPhones) ? lead.extraPhones : []),
+    ...(Array.isArray(lead.contactPhones) ? lead.contactPhones : [])
+  ];
+  return numbers.some((number) => phonesMatch(call.remoteNumber, number));
 }
 
 module.exports = { DataStore };

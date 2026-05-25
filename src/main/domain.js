@@ -1,4 +1,5 @@
 const { randomUUID } = require("node:crypto");
+const { normalizePhoneNumber } = require("./phone-utils");
 const { normalizePhone, normalizeText, titleCase } = require("./data/normalizers");
 
 const LEAD_STATUSES = [
@@ -39,6 +40,9 @@ function normalizeLead(input = {}) {
   const source = input.source ?? "manual";
   const normalizedBranch = input.normalizedBranch ?? input.category ?? "";
   const normalizedCity = input.normalizedCity ?? titleCase(input.targetMarketCity ?? input.city ?? "");
+  const phone = input.phone ?? "";
+  const primaryPhone = normalizePhoneNumber(phone);
+  const saleValue = Number(input.saleValue ?? input.orderValue ?? input.revenue ?? 0) || 0;
   return {
     id: input.id ?? createId(),
     source,
@@ -47,7 +51,11 @@ function normalizeLead(input = {}) {
     matchedQueries: safeArray(input.matchedQueries).length ? safeArray(input.matchedQueries) : (source === "manual" ? ["manuell"] : []),
     companyName: input.companyName ?? "",
     contactName: input.contactName ?? "",
-    phone: input.phone ?? "",
+    phone,
+    normalizedPhone: primaryPhone.normalizedNumber,
+    displayPhone: primaryPhone.displayNumber,
+    extraPhones: safeArray(input.extraPhones),
+    contactPhones: safeArray(input.contactPhones),
     website: input.website ?? "",
     address: input.address ?? "",
     city: input.city ?? "",
@@ -65,6 +73,9 @@ function normalizeLead(input = {}) {
     notes: input.notes ?? "",
     priority: normalizePriority(input.priority),
     status: normalizeStatus(input.status),
+    saleValue,
+    orderValue: Number(input.orderValue ?? saleValue) || 0,
+    lastSaleAt: input.lastSaleAt ?? "",
     listId: input.listId ?? input.campaignId ?? "",
     plannedDate: input.plannedDate ?? "",
     googleMapsUrl: input.googleMapsUrl ?? "",
@@ -138,19 +149,68 @@ function normalizeScheduleItem(input = {}) {
 
 function normalizeCallRecord(input = {}) {
   const timestamp = nowIso();
+  const phone = normalizePhoneNumber(input.remoteNumber ?? input.originalNumber ?? "");
   return {
     id: input.id ?? createId(),
     leadId: input.leadId ?? "",
     provider: input.provider ?? "telavox",
     externalId: input.externalId ?? "",
+    telavoxId: input.telavoxId ?? "",
     direction: input.direction ?? "unknown",
-    remoteNumber: input.remoteNumber ?? "",
+    remoteNumber: input.remoteNumber ?? input.originalNumber ?? "",
+    originalNumber: input.originalNumber ?? input.remoteNumber ?? "",
+    normalizedNumber: input.normalizedNumber ?? phone.normalizedNumber,
+    displayNumber: input.displayNumber ?? phone.displayNumber,
     happenedAt: input.happenedAt ?? timestamp,
     durationSeconds: Number(input.durationSeconds) || 0,
     recordingId: input.recordingId ?? "",
     localRecordingPath: input.localRecordingPath ?? "",
+    attribution: input.attribution ?? null,
+    manualResolution: input.manualResolution ?? null,
+    matchType: input.matchType ?? "",
+    matchConfidence: Number(input.matchConfidence) || 0,
     createdAt: input.createdAt ?? timestamp,
     updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+function normalizeCallIntent(input = {}) {
+  const timestamp = input.timestamp ?? input.createdAt ?? nowIso();
+  const phone = normalizePhoneNumber(input.number ?? input.originalNumber ?? "");
+  return {
+    id: input.id ?? createId(),
+    leadId: input.leadId ?? "",
+    number: input.number ?? input.originalNumber ?? "",
+    originalNumber: input.originalNumber ?? input.number ?? "",
+    normalizedNumber: input.normalizedNumber ?? phone.normalizedNumber,
+    displayNumber: input.displayNumber ?? phone.displayNumber,
+    timestamp,
+    selectedIndustry: input.selectedIndustry ?? "",
+    selectedCity: input.selectedCity ?? "",
+    selectedListId: input.selectedListId ?? "",
+    currentQueueId: input.currentQueueId ?? "",
+    createdAt: input.createdAt ?? timestamp
+  };
+}
+
+function normalizeTelavoxSync(input = {}) {
+  const timestamp = input.completedAt ?? input.startedAt ?? nowIso();
+  return {
+    id: input.id ?? createId(),
+    provider: "telavox",
+    endpoint: input.endpoint ?? "GET https://api.telavox.se/calls",
+    apiVersion: input.apiVersion ?? "legacy-v1",
+    fromDate: input.fromDate ?? "",
+    toDate: input.toDate ?? "",
+    fetchedCount: Number(input.fetchedCount) || 0,
+    inserted: Number(input.inserted) || 0,
+    updated: Number(input.updated) || 0,
+    matchedCount: Number(input.matchedCount) || 0,
+    unmatchedCount: Number(input.unmatchedCount) || 0,
+    limitation: input.limitation ?? "",
+    warning: input.warning ?? "",
+    startedAt: input.startedAt ?? timestamp,
+    completedAt: input.completedAt ?? timestamp
   };
 }
 
@@ -202,11 +262,14 @@ function createEmptyState() {
     campaigns: [],
     scheduleItems: [],
     callRecords: [],
+    callIntents: [],
+    telavoxSyncs: [],
     settings: {
       apiKey: "",
       openaiApiKey: "",
       telavoxToken: "",
       telavoxFromDate: "",
+      connectedCallThresholdSeconds: 20,
       dailyTarget: 40,
       lastSelectedCampaignId: "",
       lastPlannedMonth: new Date().toISOString().slice(0, 7)
@@ -225,10 +288,12 @@ module.exports = {
   findDuplicateLead,
   normalizeCampaign,
   normalizeCallRecord,
+  normalizeCallIntent,
   normalizeLead,
   normalizeLogEntry,
   normalizePriority,
   normalizeReminder,
   normalizeScheduleItem,
+  normalizeTelavoxSync,
   normalizeStatus
 };

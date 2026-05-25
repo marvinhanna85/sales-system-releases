@@ -78,8 +78,10 @@ async function fetchTelavoxRecording({ token, recordingId }) {
 function flattenCalls(items, direction) {
   return Array.isArray(items)
     ? items.map((item) => ({
+        telavoxId: item.id || item.callId || item.id_call || "",
         direction,
         remoteNumber: item.number || "",
+        originalNumber: item.number || "",
         happenedAt: item.datetimeISO || item.datetime || "",
         durationSeconds: Number(item.duration) || 0,
         recordingId: item.recordingId && item.recordingId !== "0" ? item.recordingId : ""

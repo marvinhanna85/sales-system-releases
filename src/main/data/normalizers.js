@@ -1,8 +1,5 @@
+const { normalizePhone } = require("../phone-utils");
 const { inferBranchLabel, normalizeText } = require("./taxonomy");
-
-function normalizePhone(value) {
-  return String(value ?? "").replace(/\D/g, "");
-}
 
 function titleCase(value) {
   return String(value ?? "")

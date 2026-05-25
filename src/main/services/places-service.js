@@ -48,7 +48,8 @@ async function fetchPlaceDetails(apiKey, placeId) {
   });
 }
 
-async function searchSingleQuery(apiKey, query, maxResultsPerQuery) {
+async function searchSingleQuery(apiKey, query, maxResultsPerQuery, options = {}) {
+  const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
   const effectiveMax = Math.min(Math.max(1, Number(maxResultsPerQuery) || MAX_RESULTS_PER_QUERY), MAX_RESULTS_PER_QUERY);
   const pageSize = Math.min(PAGE_SIZE, effectiveMax);
   const rawPlaces = [];
@@ -101,18 +102,52 @@ async function searchSingleQuery(apiKey, query, maxResultsPerQuery) {
   rawPlaces.push(...(Array.isArray(firstPage.places) ? firstPage.places : []));
   nextPageToken = firstPage.nextPageToken ?? "";
   hadNextPageToken = Boolean(nextPageToken);
+  onProgress({
+    stage: "page",
+    rawCount: rawPlaces.length,
+    apiCalls,
+    pageCount: 1,
+    queryProgress: 0.1
+  });
 
+  let pageCount = 1;
   while (nextPageToken && rawPlaces.length < effectiveMax) {
     usedPagination = true;
     const pageData = await fetchPage(nextPageToken, true);
     rawPlaces.push(...(Array.isArray(pageData.places) ? pageData.places : []));
     nextPageToken = pageData.nextPageToken ?? "";
+    pageCount += 1;
+    onProgress({
+      stage: "page",
+      rawCount: rawPlaces.length,
+      apiCalls,
+      pageCount,
+      queryProgress: Math.min(0.25, 0.1 + pageCount * 0.05)
+    });
   }
 
   const detailedPlaces = [];
-  for (const place of rawPlaces.slice(0, effectiveMax)) {
+  const placesForDetails = rawPlaces.slice(0, effectiveMax);
+  onProgress({
+    stage: "details-start",
+    rawCount: rawPlaces.length,
+    detailIndex: 0,
+    detailTotal: placesForDetails.length,
+    apiCalls,
+    queryProgress: 0.3
+  });
+
+  for (const [index, place] of placesForDetails.entries()) {
     if (!place.id) {
       detailedPlaces.push(place);
+      onProgress({
+        stage: "details",
+        rawCount: rawPlaces.length,
+        detailIndex: index + 1,
+        detailTotal: placesForDetails.length,
+        apiCalls,
+        queryProgress: 0.3 + 0.65 * ((index + 1) / Math.max(1, placesForDetails.length))
+      });
       continue;
     }
 
@@ -122,6 +157,16 @@ async function searchSingleQuery(apiKey, query, maxResultsPerQuery) {
       detailedPlaces.push({ ...place, ...detail });
     } catch (_error) {
       detailedPlaces.push(place);
+    }
+    if ((index + 1) % 5 === 0 || index + 1 === placesForDetails.length) {
+      onProgress({
+        stage: "details",
+        rawCount: rawPlaces.length,
+        detailIndex: index + 1,
+        detailTotal: placesForDetails.length,
+        apiCalls,
+        queryProgress: 0.3 + 0.65 * ((index + 1) / Math.max(1, placesForDetails.length))
+      });
     }
   }
 
