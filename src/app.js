@@ -1219,7 +1219,7 @@ function getStatisticsDateRange() {
   };
 }
 
-function renderStatistics() {
+function renderLegacyStatistics() {
   if (!elements.statisticsKpis) {
     return;
   }
