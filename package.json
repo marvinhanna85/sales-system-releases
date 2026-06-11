@@ -1,6 +1,6 @@
 {
   "name": "prospekt-crm",
-  "version": "1.0.49",
+  "version": "1.0.50",
   "description": "Ett enkelt CRM i kompakt appformat for prospektering.",
   "main": "main.js",
   "author": "OpenAI Codex",
