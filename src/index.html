@@ -53,6 +53,7 @@
             <button id="topbarNextLead" class="primary-button" type="button">Öppna nästa lead</button>
           </div>
         </header>
+        <div id="appErrorBanner" class="app-error-banner" hidden></div>
 
         <section id="dashboardView" class="view is-active">
           <div id="dashboardStats" class="stats-grid"></div>
@@ -491,7 +492,7 @@
             <div class="statistics-hero panel">
               <div>
                 <p class="section-label">Statistik</p>
-                <h3>Outbound decision engine</h3>
+                <h3>Säljstatistik och nästa bästa fokus</h3>
               </div>
               <div class="statistics-controls">
                 <select id="statisticsCampaignSelect" class="input compact-input">
@@ -504,24 +505,15 @@
                   <option value="last7">Senaste 7 dagarna</option>
                   <option value="last30">Senaste 30 dagarna</option>
                   <option value="last90">Senaste 90 dagarna</option>
-                  <option value="custom">Eget datumintervall</option>
+                  <option value="custom">Eget datum</option>
                 </select>
                 <select id="statisticsGroupBy" class="input compact-input">
                   <option value="day">Daglig vy</option>
                   <option value="week">Veckovy</option>
-                  <option value="month">Månadsvy</option>
-                </select>
-                <select id="statisticsAttributionMode" class="input compact-input">
-                  <option value="hard_inferred">Hard + inferred</option>
-                  <option value="hard">Hard only</option>
-                  <option value="raw">Raw all</option>
+                  <option value="month">Månadsvis</option>
                 </select>
                 <input id="statisticsFromDate" class="input compact-input" type="date" />
                 <input id="statisticsToDate" class="input compact-input" type="date" />
-                <label class="statistics-toggle">
-                  <input id="statisticsHideEmptyBuckets" type="checkbox" checked />
-                  <span>Dölj tomma</span>
-                </label>
                 <button id="statisticsSyncTelavoxButton" class="secondary-button" type="button">Synka Telavox</button>
               </div>
             </div>
@@ -530,16 +522,16 @@
 
             <div id="statisticsKpis" class="statistics-kpis"></div>
 
-            <div class="statistics-layout statistics-layout-secondary">
-              <section class="panel statistics-panel">
+            <div class="statistics-layout">
+              <section class="panel statistics-panel statistics-main-panel">
                 <div class="section-header">
                   <div>
-                    <p class="section-label">Datatäckning</p>
-                    <h3>Telavox sync coverage</h3>
+                    <p class="section-label">Pipeline</p>
+                    <h3>Status just nu</h3>
                   </div>
-                  <span id="statisticsTelavoxSummary" class="muted-text">Ingen synk ännu</span>
+                  <span id="statisticsStatusRange" class="muted-text">Aktiva kunder</span>
                 </div>
-                <div id="statisticsCoverage" class="statistics-coverage"></div>
+                <div id="statisticsStatusBars" class="statistics-bars"></div>
               </section>
 
               <section class="panel statistics-panel">
@@ -548,73 +540,60 @@
                     <p class="section-label">Nyckeltal</p>
                     <h3>Vad krävs för ett sälj?</h3>
                   </div>
-                  <span class="muted-text">Raw, säljdial, connected och qualified</span>
+                  <span class="muted-text">Periodens relationer</span>
                 </div>
                 <div id="statisticsInsights" class="statistics-insights"></div>
               </section>
             </div>
 
-            <section class="panel statistics-panel">
-              <div class="section-header">
-                <div>
-                  <p class="section-label">Grafbyggare</p>
-                  <h3>Serier per vald period</h3>
+            <div class="statistics-layout">
+              <section class="panel statistics-panel">
+                <div class="section-header">
+                  <div>
+                    <p class="section-label">Periodpuls</p>
+                    <h3>Samtal, matchning och sälj</h3>
+                  </div>
+                  <span id="statisticsActivityLegend" class="muted-text">Telavox totalt</span>
                 </div>
-                <span id="statisticsActivityLegend" class="muted-text">Telavox + CRM + resultat</span>
-              </div>
-              <div id="statisticsSeriesPicker" class="statistics-series-picker"></div>
-              <div id="statisticsActivityBars" class="statistics-activity-bars"></div>
-            </section>
+                <div id="statisticsChartMetricButtons" class="statistics-chart-modes"></div>
+                <div id="statisticsActivityBars" class="statistics-activity-bars"></div>
+              </section>
 
-            <section class="panel statistics-panel">
-              <div class="section-header">
-                <div>
-                  <p class="section-label">Segmentranking</p>
-                  <h3>Bransch, stad och lista</h3>
+              <section class="panel statistics-panel">
+                <div class="section-header">
+                  <div>
+                    <p class="section-label">Fokussegment</p>
+                    <h3>Branscher att prioritera</h3>
+                  </div>
+                  <span class="muted-text">Sorterad på aktivitet och sälj</span>
                 </div>
-                <div class="statistics-panel-tools">
-                  <select id="statisticsSegmentSort" class="input compact-input">
-                    <option value="priorityScore">Priority score</option>
-                    <option value="expectedKrPerDial">Expected kr/dial</option>
-                    <option value="revenuePerDial">Revenue per dial</option>
-                    <option value="revenue">Revenue</option>
-                    <option value="salesCount">Sälj</option>
-                    <option value="dialsPerSale">Dials/sälj</option>
-                    <option value="availableLeads">Leads kvar</option>
-                    <option value="dataQuality">Datakvalitet</option>
-                    <option value="hardDataShare">Hard data share</option>
-                  </select>
-                </div>
-              </div>
-              <div id="statisticsSegmentsTable" class="statistics-table-wrap"></div>
-            </section>
+                <div id="statisticsSegmentsTable" class="statistics-table-wrap"></div>
+              </section>
+            </div>
 
-            <section class="panel statistics-panel">
-              <div class="section-header">
-                <div>
-                  <p class="section-label">Telavox totalt</p>
-                  <h3>Alla samtal i vald period</h3>
+            <div class="statistics-layout statistics-layout-secondary">
+              <section class="panel statistics-panel">
+                <div class="section-header">
+                  <div>
+                    <p class="section-label">Datakvalitet</p>
+                    <h3>Telavox och CRM-matchning</h3>
+                  </div>
+                  <span id="statisticsTelavoxSummary" class="muted-text">Ingen synk ännu</span>
                 </div>
-                <div class="statistics-panel-tools">
-                  <button id="statisticsExportRawButton" class="secondary-button" type="button">Raw JSON</button>
-                  <button id="statisticsExportAttributedButton" class="secondary-button" type="button">Attributed JSON</button>
-                  <button id="statisticsExportSegmentsButton" class="secondary-button" type="button">Segment CSV</button>
-                  <button id="statisticsExportMetricsButton" class="secondary-button" type="button">Metrics JSON</button>
-                </div>
-              </div>
-              <div id="statisticsTelavoxBreakdown" class="statistics-telavox-grid"></div>
-            </section>
+                <div id="statisticsTelavoxBreakdown" class="statistics-telavox-grid"></div>
+              </section>
 
-            <section class="panel statistics-panel">
-              <div class="section-header">
-                <div>
-                  <p class="section-label">Omatchade nummer att lösa</p>
-                  <h3>Hard data först, antaganden tydligt märkta</h3>
+              <section class="panel statistics-panel">
+                <div class="section-header">
+                  <div>
+                    <p class="section-label">Att reda ut</p>
+                    <h3>Samtal utan säker CRM-träff</h3>
+                  </div>
+                  <span class="muted-text">Direktnummer, branschgissningar och olösta nummer</span>
                 </div>
-                <span class="muted-text">Koppla, lägg till extra nummer, skapa kund eller ignorera</span>
-              </div>
-              <div id="statisticsUnmatchedCalls" class="statistics-table-wrap"></div>
-            </section>
+                <div id="statisticsUnmatchedCalls" class="statistics-table-wrap"></div>
+              </section>
+            </div>
           </section>
         </section>
 
@@ -737,6 +716,7 @@
 
                   <div class="inline-actions">
                     <button id="adsInterpretButton" class="primary-button" type="button">Tolka material med AI</button>
+                    <button id="adsGenerateButton" class="secondary-button" type="button">Skapa riktningar</button>
                     <button id="adsGenerateImageButton" class="ghost-button" type="button">Generera komplett annonsbild</button>
                   </div>
                   <p id="adsFeedback" class="feedback">Tolka materialet f&ouml;r att f&aring; riktningar. Generera sedan en komplett 16:9-annons med GPT Image 2.</p>
@@ -1125,10 +1105,6 @@
             <input id="editPhoneInput" class="input" type="text" />
           </label>
           <label class="field">
-            <span>Extra telefoner</span>
-            <input id="editExtraPhonesInput" class="input" type="text" placeholder="Separera med komma" />
-          </label>
-          <label class="field">
             <span>Kontaktperson</span>
             <input id="editContactInput" class="input" type="text" />
           </label>
@@ -1154,10 +1130,6 @@
             <select id="editCampaignSelect" class="input">
               <option value="">Ingen lista</option>
             </select>
-          </label>
-          <label class="field">
-            <span>Ordervärde / sale value</span>
-            <input id="editSaleValueInput" class="input" type="number" min="0" step="100" />
           </label>
         </div>
 
